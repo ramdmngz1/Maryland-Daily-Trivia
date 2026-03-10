@@ -131,6 +131,139 @@ def draw_crab_icon(draw, cx, cy, scale, color=(255, 186, 52)):
         base.alpha_composite(c)
 
 
+def draw_cross_bottony(draw, cx, cy, size, color):
+    arm = size
+    bar = max(4, size // 5)
+    draw.rectangle((cx - bar // 2, cy - arm, cx + bar // 2, cy + arm), fill=color)
+    draw.rectangle((cx - arm, cy - bar // 2, cx + arm, cy + bar // 2), fill=color)
+    r = max(5, size // 5)
+    draw.ellipse((cx - r, cy - arm - r, cx + r, cy - arm + r), fill=color)
+    draw.ellipse((cx - r, cy + arm - r, cx + r, cy + arm + r), fill=color)
+    draw.ellipse((cx - arm - r, cy - r, cx - arm + r, cy + r), fill=color)
+    draw.ellipse((cx + arm - r, cy - r, cx + arm + r, cy + r), fill=color)
+
+
+def draw_calvert_quarter(draw, x1, y1, x2, y2):
+    md_black = (26, 24, 24, 215)
+    md_gold = (244, 188, 68, 215)
+    cell = max(26, (x2 - x1) // 8)
+
+    for y in range(y1, y2, cell):
+        for x in range(x1, x2, cell):
+            col = md_gold if (((x - x1) // cell + (y - y1) // cell) % 2 == 0) else md_black
+            draw.rectangle((x, y, min(x + cell, x2), min(y + cell, y2)), fill=col)
+
+    w = x2 - x1
+    band_outer = int(w * 0.24)
+    band_inner = int(w * 0.14)
+    draw.polygon(
+        [
+            (x1 - band_outer, y2),
+            (x1, y2),
+            (x2 + band_outer, y1),
+            (x2, y1),
+        ],
+        fill=md_black,
+    )
+    draw.polygon(
+        [
+            (x1 - band_inner, y2),
+            (x1 + band_inner, y2),
+            (x2 + band_inner, y1),
+            (x2 - band_inner, y1),
+        ],
+        fill=md_gold,
+    )
+
+
+def draw_crossland_quarter(draw, x1, y1, x2, y2):
+    md_red = (168, 29, 40, 215)
+    md_white = (243, 236, 226, 205)
+    draw.rectangle((x1, y1, x2, y2), fill=md_red)
+    spacing = max(64, (x2 - x1) // 4)
+    size = max(15, spacing // 4)
+    for cy in range(y1 + spacing // 2, y2, spacing):
+        for cx in range(x1 + spacing // 2, x2, spacing):
+            draw_cross_bottony(draw, cx, cy, size, md_white)
+
+
+def draw_blue_crab_icon(cx, cy, scale=1.0):
+    shell_fill = (41, 106, 191, 220)
+    shell_shadow = (16, 49, 101, 170)
+    line = (152, 223, 255, 255)
+    glow = (88, 176, 255, 140)
+
+    art = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+    ad = ImageDraw.Draw(art)
+
+    # Carapace with side spines to read as a Maryland blue crab.
+    shell = [
+        (cx - int(168 * scale), cy + int(10 * scale)),
+        (cx - int(138 * scale), cy - int(52 * scale)),
+        (cx - int(92 * scale), cy - int(95 * scale)),
+        (cx - int(30 * scale), cy - int(122 * scale)),
+        (cx + int(30 * scale), cy - int(122 * scale)),
+        (cx + int(92 * scale), cy - int(95 * scale)),
+        (cx + int(138 * scale), cy - int(52 * scale)),
+        (cx + int(168 * scale), cy + int(10 * scale)),
+        (cx + int(96 * scale), cy + int(68 * scale)),
+        (cx - int(96 * scale), cy + int(68 * scale)),
+    ]
+    ad.polygon(shell, fill=shell_fill, outline=line, width=max(4, int(7 * scale)))
+    ad.polygon(
+        [
+            (cx - int(130 * scale), cy + int(8 * scale)),
+            (cx - int(20 * scale), cy - int(88 * scale)),
+            (cx + int(20 * scale), cy - int(88 * scale)),
+            (cx + int(130 * scale), cy + int(8 * scale)),
+            (cx + int(70 * scale), cy + int(42 * scale)),
+            (cx - int(70 * scale), cy + int(42 * scale)),
+        ],
+        fill=shell_shadow,
+    )
+
+    # Eyes
+    for s in (-1, 1):
+        x_eye = cx + s * int(36 * scale)
+        ad.line(
+            [(x_eye, cy - int(92 * scale)), (x_eye, cy - int(126 * scale))],
+            fill=line,
+            width=max(3, int(5 * scale)),
+        )
+        r = max(5, int(8 * scale))
+        ad.ellipse((x_eye - r, cy - int(132 * scale) - r, x_eye + r, cy - int(132 * scale) + r), fill=line)
+
+    # Legs
+    for s in (-1, 1):
+        for i in range(4):
+            shoulder = (cx + s * int((76 + i * 18) * scale), cy + int((32 + i * 6) * scale))
+            mid = (cx + s * int((142 + i * 20) * scale), cy + int((68 + i * 18) * scale))
+            tip = (cx + s * int((196 + i * 26) * scale), cy + int((104 + i * 24) * scale))
+            ad.line([shoulder, mid, tip], fill=line, width=max(4, int(7 * scale)))
+
+    # Claws
+    for s in (-1, 1):
+        shoulder = (cx + s * int(134 * scale), cy - int(28 * scale))
+        elbow = (cx + s * int(214 * scale), cy - int(98 * scale))
+        ad.line([shoulder, elbow], fill=line, width=max(4, int(8 * scale)))
+        px, py = elbow
+        claw = [
+            (px, py),
+            (px + s * int(54 * scale), py - int(36 * scale)),
+            (px + s * int(78 * scale), py - int(8 * scale)),
+            (px + s * int(34 * scale), py + int(4 * scale)),
+            (px + s * int(72 * scale), py + int(42 * scale)),
+            (px + s * int(38 * scale), py + int(52 * scale)),
+        ]
+        ad.line(claw, fill=line, width=max(4, int(8 * scale)), joint='curve')
+
+    glow_layer = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow_layer)
+    gd.polygon(shell, outline=glow, width=max(7, int(11 * scale)))
+    base.alpha_composite(glow_layer.filter(ImageFilter.GaussianBlur(max(12, int(18 * scale)))))
+    base.alpha_composite(art)
+
+
 # --------- Icon 1: Maryland Crest Shield ---------
 base = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 255))
 base.alpha_composite(radial_bg((39, 12, 8), (7, 5, 10), noise=True).convert('RGBA'))
@@ -148,34 +281,37 @@ for w, blur, a in [(18, 26, 120), (12, 14, 150)]:
 d.line(outer + [outer[0]], fill=(255, 186, 52, 255), width=9, joint='curve')
 d.line(inner + [inner[0]], fill=(150, 92, 23, 170), width=3, joint='curve')
 
-# subtle quartered Maryland-inspired fill
+# Maryland-flag-inspired fill
 fill_layer = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
 fd = ImageDraw.Draw(fill_layer)
-fd.polygon(inner, fill=(18, 10, 16, 120))
+fd.polygon(inner, fill=(12, 10, 14, 110))
 clip = Image.new('L', (SIZE, SIZE), 0)
 ImageDraw.Draw(clip).polygon(inner, fill=255)
 pattern = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
 pd = ImageDraw.Draw(pattern)
-for y in range(180, 860, 34):
-    pd.line([(220, y), (804, y)], fill=(255, 210, 96, 20), width=1)
-# red-white crosses (simplified)
-pd.rectangle((250, 260, 500, 480), fill=(132, 18, 24, 95))
-pd.rectangle((520, 260, 770, 480), fill=(16, 16, 18, 95))
-pd.rectangle((250, 500, 500, 720), fill=(16, 16, 18, 95))
-pd.rectangle((520, 500, 770, 720), fill=(132, 18, 24, 95))
+
+ix1, iy1 = 220, 222
+ix2, iy2 = 804, 788
+mx = (ix1 + ix2) // 2
+my = (iy1 + iy2) // 2
+
+draw_calvert_quarter(pd, ix1, iy1, mx, my)
+draw_crossland_quarter(pd, mx, iy1, ix2, my)
+draw_crossland_quarter(pd, ix1, my, mx, iy2)
+draw_calvert_quarter(pd, mx, my, ix2, iy2)
+
+# Dim overlay so foreground stays legible at small sizes.
+pd.rectangle((ix1, iy1, ix2, iy2), fill=(6, 8, 14, 70))
+
+# Fine warm pinstripes to keep continuity with the Texas icon family.
+for y in range(iy1 + 12, iy2, 36):
+    pd.line([(ix1 + 6, y), (ix2 - 6, y)], fill=(255, 210, 96, 24), width=1)
+
 pattern.putalpha(clip)
 base.alpha_composite(fill_layer)
 base.alpha_composite(pattern)
 
-draw_crab_icon(d, CENTER, 560, 1.05)
-
-# top star and text
-s = star(CENTER, 205, 92, 38)
-star_layer = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-sd = ImageDraw.Draw(star_layer)
-sd.polygon(s, fill=(239, 188, 74, 255), outline=(190, 123, 25, 255))
-base.alpha_composite(star_layer.filter(ImageFilter.GaussianBlur(10)))
-base.alpha_composite(star_layer)
+draw_blue_crab_icon(CENTER, 528, 0.93)
 
 try:
     font_big = ImageFont.truetype('/System/Library/Fonts/Supplemental/Georgia Bold.ttf', 84)
