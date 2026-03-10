@@ -1,0 +1,81 @@
+# Environment & secrets
+.env
+.env.*
+*.secret
+*.key
+*.pem
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.xcuserdata/
+*.xcworkspace/xcuserdata/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# Android
+Android/.gradle/
+Android/app/build/
+Android/build/
+Android/local.properties
+*.keystore
+*.jks
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code session data
+.claude/
+
+# Internal logs
+Logs/
+
+# Android
+*.iml
+.gradle/
+local.properties
+Android/.gradle/
+Android/app/build/
+Android/build/
+Android/captures/
+Android/.externalNativeBuild/
+Android/.cxx/
+*.apk
+*.aab
+
+# Node / Cloudflare Worker
+node_modules/
+npm-debug.log*
+
+# Wrangler
+.wrangler/
