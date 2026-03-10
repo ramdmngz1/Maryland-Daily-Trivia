@@ -144,8 +144,8 @@ def draw_cross_bottony(draw, cx, cy, size, color):
 
 
 def draw_calvert_quarter(draw, x1, y1, x2, y2):
-    md_black = (26, 24, 24, 215)
-    md_gold = (244, 188, 68, 215)
+    md_black = (18, 18, 18, 255)
+    md_gold = (252, 209, 22, 255)
     cell = max(26, (x2 - x1) // 8)
 
     for y in range(y1, y2, cell):
@@ -176,20 +176,35 @@ def draw_calvert_quarter(draw, x1, y1, x2, y2):
     )
 
 
+def draw_checker_quarter(draw, x1, y1, x2, y2, c1, c2, cell):
+    for y in range(y1, y2, cell):
+        for x in range(x1, x2, cell):
+            row = (y - y1) // cell
+            col = (x - x1) // cell
+            color = c1 if (row + col) % 2 == 0 else c2
+            draw.rectangle((x, y, min(x + cell, x2), min(y + cell, y2)), fill=color)
+
+
 def draw_crossland_quarter(draw, x1, y1, x2, y2):
-    md_red = (168, 29, 40, 215)
-    md_white = (243, 236, 226, 205)
-    draw.rectangle((x1, y1, x2, y2), fill=md_red)
-    spacing = max(64, (x2 - x1) // 4)
-    size = max(15, spacing // 4)
-    for cy in range(y1 + spacing // 2, y2, spacing):
-        for cx in range(x1 + spacing // 2, x2, spacing):
-            draw_cross_bottony(draw, cx, cy, size, md_white)
+    md_red = (191, 10, 48, 255)
+    md_white = (244, 244, 244, 255)
+    tile = max(54, (x2 - x1) // 5)
+
+    for y in range(y1, y2, tile):
+        for x in range(x1, x2, tile):
+            row = (y - y1) // tile
+            col = (x - x1) // tile
+            base_color = md_red if (row + col) % 2 == 0 else md_white
+            cross_color = md_white if base_color == md_red else md_red
+            draw.rectangle((x, y, min(x + tile, x2), min(y + tile, y2)), fill=base_color)
+            cx = x + min(tile, x2 - x) // 2
+            cy = y + min(tile, y2 - y) // 2
+            draw_cross_bottony(draw, cx, cy, max(12, tile // 5), cross_color)
 
 
 def draw_blue_crab_icon(cx, cy, scale=1.0):
-    shell_fill = (41, 106, 191, 220)
-    shell_shadow = (16, 49, 101, 170)
+    shell_fill = (41, 106, 191, 246)
+    shell_shadow = (18, 57, 120, 246)
     line = (152, 223, 255, 255)
     glow = (88, 176, 255, 140)
 
@@ -236,10 +251,10 @@ def draw_blue_crab_icon(cx, cy, scale=1.0):
     # Legs
     for s in (-1, 1):
         for i in range(4):
-            shoulder = (cx + s * int((76 + i * 18) * scale), cy + int((32 + i * 6) * scale))
-            mid = (cx + s * int((142 + i * 20) * scale), cy + int((68 + i * 18) * scale))
-            tip = (cx + s * int((196 + i * 26) * scale), cy + int((104 + i * 24) * scale))
-            ad.line([shoulder, mid, tip], fill=line, width=max(4, int(7 * scale)))
+            shoulder = (cx + s * int((76 + i * 18) * scale), cy + int((30 + i * 6) * scale))
+            mid = (cx + s * int((132 + i * 18) * scale), cy + int((64 + i * 13) * scale))
+            tip = (cx + s * int((176 + i * 22) * scale), cy + int((96 + i * 20) * scale))
+            ad.line([shoulder, mid, tip], fill=line, width=max(4, int(7 * scale)), joint='curve')
 
     # Claws
     for s in (-1, 1):
@@ -247,15 +262,16 @@ def draw_blue_crab_icon(cx, cy, scale=1.0):
         elbow = (cx + s * int(214 * scale), cy - int(98 * scale))
         ad.line([shoulder, elbow], fill=line, width=max(4, int(8 * scale)))
         px, py = elbow
-        claw = [
+        claw_outer = [
             (px, py),
-            (px + s * int(54 * scale), py - int(36 * scale)),
-            (px + s * int(78 * scale), py - int(8 * scale)),
-            (px + s * int(34 * scale), py + int(4 * scale)),
-            (px + s * int(72 * scale), py + int(42 * scale)),
-            (px + s * int(38 * scale), py + int(52 * scale)),
+            (px + s * int(62 * scale), py - int(42 * scale)),
+            (px + s * int(90 * scale), py - int(12 * scale)),
+            (px + s * int(48 * scale), py + int(6 * scale)),
+            (px + s * int(84 * scale), py + int(44 * scale)),
+            (px + s * int(44 * scale), py + int(56 * scale)),
         ]
-        ad.line(claw, fill=line, width=max(4, int(8 * scale)), joint='curve')
+        ad.polygon(claw_outer, fill=(30, 91, 178, 220), outline=line)
+        ad.line(claw_outer + [claw_outer[0]], fill=line, width=max(3, int(5 * scale)), joint='curve')
 
     glow_layer = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow_layer)
@@ -284,7 +300,7 @@ d.line(inner + [inner[0]], fill=(150, 92, 23, 170), width=3, joint='curve')
 # Maryland-flag-inspired fill
 fill_layer = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
 fd = ImageDraw.Draw(fill_layer)
-fd.polygon(inner, fill=(12, 10, 14, 110))
+fd.polygon(inner, fill=(8, 8, 10, 20))
 clip = Image.new('L', (SIZE, SIZE), 0)
 ImageDraw.Draw(clip).polygon(inner, fill=255)
 pattern = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
@@ -295,23 +311,29 @@ ix2, iy2 = 804, 788
 mx = (ix1 + ix2) // 2
 my = (iy1 + iy2) // 2
 
-draw_calvert_quarter(pd, ix1, iy1, mx, my)
-draw_crossland_quarter(pd, mx, iy1, ix2, my)
-draw_crossland_quarter(pd, ix1, my, mx, iy2)
-draw_calvert_quarter(pd, mx, my, ix2, iy2)
-
-# Dim overlay so foreground stays legible at small sizes.
-pd.rectangle((ix1, iy1, ix2, iy2), fill=(6, 8, 14, 70))
+draw_checker_quarter(pd, ix1, iy1, mx, my, (252, 209, 22, 255), (18, 18, 18, 255), 56)
+draw_checker_quarter(pd, mx, iy1, ix2, my, (191, 10, 48, 255), (244, 244, 244, 255), 56)
+draw_checker_quarter(pd, ix1, my, mx, iy2, (191, 10, 48, 255), (244, 244, 244, 255), 56)
+draw_checker_quarter(pd, mx, my, ix2, iy2, (252, 209, 22, 255), (18, 18, 18, 255), 56)
 
 # Fine warm pinstripes to keep continuity with the Texas icon family.
 for y in range(iy1 + 12, iy2, 36):
-    pd.line([(ix1 + 6, y), (ix2 - 6, y)], fill=(255, 210, 96, 24), width=1)
+    pd.line([(ix1 + 6, y), (ix2 - 6, y)], fill=(255, 210, 96, 16), width=1)
 
-pattern.putalpha(clip)
+masked_pattern = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+masked_pattern.paste(pattern, (0, 0), clip)
 base.alpha_composite(fill_layer)
-base.alpha_composite(pattern)
+base.alpha_composite(masked_pattern)
 
 draw_blue_crab_icon(CENTER, 528, 0.93)
+
+# Readability band for title text.
+text_band = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+tb = ImageDraw.Draw(text_band)
+tb.rectangle((250, 672, 774, 832), fill=(5, 7, 12, 118))
+masked_band = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+masked_band.paste(text_band, (0, 0), clip)
+base.alpha_composite(masked_band)
 
 try:
     font_big = ImageFont.truetype('/System/Library/Fonts/Supplemental/Georgia Bold.ttf', 84)
