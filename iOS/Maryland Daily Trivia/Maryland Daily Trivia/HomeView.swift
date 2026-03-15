@@ -7,7 +7,6 @@
 //
 
 import SwiftUI
-import Foundation
 
 struct HomeView: View {
     @State private var showSettings = false
@@ -151,7 +150,7 @@ struct HomeView: View {
                     ArmadilloSpriteView(size: 160)
                         .padding(.bottom, -14)
 
-                    NeonText(text: "TEXAS DAILY", size: 36)
+                    NeonText(text: "MARYLAND DAILY", size: 36)
 
                     Text("TRIVIA")
                         .font(.system(size: 12, weight: .bold))

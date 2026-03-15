@@ -22,8 +22,8 @@ object SecureHttpClient {
     private val hostAllowlistInterceptor = Interceptor { chain ->
         val request = chain.request()
         val url = request.url
-        require(url.scheme == "https") { "Only HTTPS requests are allowed" }
-        require(url.host in allowedHosts) { "Host not in allowlist: ${url.host}" }
+        if (url.scheme != "https") throw java.io.IOException("Only HTTPS requests are allowed")
+        if (url.host !in allowedHosts) throw java.io.IOException("Host not in allowlist: ${url.host}")
         chain.proceed(request)
     }
 

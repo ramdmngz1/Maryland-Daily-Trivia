@@ -14,7 +14,7 @@ class SecureStorageManager(context: Context) {
 
     // Non-sensitive app preferences (haptics, motion, rules acknowledgement)
     private val appPrefs: SharedPreferences =
-        context.getSharedPreferences("texas_trivia_app_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("maryland_trivia_app_prefs", Context.MODE_PRIVATE)
 
     private val prefs by lazy {
         val masterKey = MasterKey.Builder(context)
@@ -22,7 +22,7 @@ class SecureStorageManager(context: Context) {
             .build()
         EncryptedSharedPreferences.create(
             context,
-            "texas_trivia_secure_prefs",
+            "maryland_trivia_secure_prefs",
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM

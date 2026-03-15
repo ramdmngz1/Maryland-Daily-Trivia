@@ -34,7 +34,7 @@ struct UsernameEntryView: View {
                     VStack(spacing: 8) {
                         ArmadilloSpriteView(size: 64)
 
-                        NeonText(text: "TEXAS DAILY", size: 24)
+                        NeonText(text: "MARYLAND DAILY", size: 24)
 
                         Text("TRIVIA")
                             .font(.system(size: 10, weight: .bold))
