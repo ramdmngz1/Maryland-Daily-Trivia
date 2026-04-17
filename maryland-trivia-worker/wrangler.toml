@@ -8,6 +8,10 @@ binding = "DB"
 database_name = "maryland-trivia-contest"
 database_id = "f3586d22-5426-4ada-bdec-5d245b63d34f"
 
+[[kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "b2079f38e7fe443d85fceafbedb9da9b"
+
 # Environment variables
 [vars]
 ENVIRONMENT = "production"
@@ -23,6 +27,10 @@ ENVIRONMENT = "production"
 binding = "DB"
 database_name = "maryland-trivia-contest"
 database_id = "f3586d22-5426-4ada-bdec-5d245b63d34f"
+
+[[env.production.kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "b2079f38e7fe443d85fceafbedb9da9b"
 
 # Staging environment
 [env.staging]

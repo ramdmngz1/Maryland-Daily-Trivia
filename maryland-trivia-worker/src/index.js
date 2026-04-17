@@ -8,7 +8,7 @@ const RATE_LIMIT_MAX_REQUESTS = {
   default: 60,
   liveState: 90,
   leaderboard: 30,
-  auth: 30,
+  auth: 10,
   write: 30,
   questions: 40,
 };
@@ -27,21 +27,52 @@ function rateLimitBucketFor(pathname, method) {
   return 'default';
 }
 
-function checkRateLimit(ip, bucket, maxRequests) {
+async function checkRateLimitGlobal(ip, bucket, maxRequests, kvNamespace) {
   const now = Date.now();
+  const key = `rl:${ip}:${bucket}`;
+
+  try {
+    const raw = await kvNamespace.get(key);
+    const entry = raw ? JSON.parse(raw) : null;
+
+    if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+      await kvNamespace.put(key, JSON.stringify({ windowStart: now, count: 1 }), { expirationTtl: 120 });
+      return { limited: false, retryAfter: 0 };
+    }
+
+    const newCount = entry.count + 1;
+    await kvNamespace.put(key, JSON.stringify({ windowStart: entry.windowStart, count: newCount }), { expirationTtl: 120 });
+
+    if (newCount > maxRequests) {
+      const retryAfter = Math.max(1, Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000));
+      return { limited: true, retryAfter };
+    }
+    return { limited: false, retryAfter: 0 };
+  } catch {
+    return checkRateLimitInMemory(ip, bucket, maxRequests, now);
+  }
+}
+
+function checkRateLimitInMemory(ip, bucket, maxRequests, now) {
   const key = `${ip}:${bucket}`;
   const entry = rateLimitMap.get(key);
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
     rateLimitMap.set(key, { windowStart: now, count: 1 });
     return { limited: false, retryAfter: 0 };
   }
-
   entry.count++;
   if (entry.count > maxRequests) {
     const retryAfter = Math.max(1, Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000));
     return { limited: true, retryAfter };
   }
   return { limited: false, retryAfter: 0 };
+}
+
+async function checkRateLimit(ip, bucket, maxRequests, env) {
+  if (env.RATE_LIMITS && bucket === 'auth') {
+    return checkRateLimitGlobal(ip, bucket, maxRequests, env.RATE_LIMITS);
+  }
+  return checkRateLimitInMemory(ip, bucket, maxRequests, Date.now());
 }
 
 // ROUND ID VALIDATION
@@ -115,6 +146,69 @@ async function verifyAndroidChallengeSignature({ challengeNonce, deviceId, keyId
   );
 }
 
+function cborDecode(bytes) {
+  if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
+  let pos = 0;
+  function u8()  { return bytes[pos++]; }
+  function u16() { const v = (bytes[pos] << 8) | bytes[pos + 1]; pos += 2; return v >>> 0; }
+  function u32() {
+    const v = ((bytes[pos] << 24) | (bytes[pos+1] << 16) | (bytes[pos+2] << 8) | bytes[pos+3]) >>> 0;
+    pos += 4; return v;
+  }
+  function readLen(add) {
+    if (add < 24)   return add;
+    if (add === 24) return u8();
+    if (add === 25) return u16();
+    if (add === 26) return u32();
+    throw new Error('cbor: unsupported length encoding');
+  }
+  function decode() {
+    const b = u8(), major = b >> 5, add = b & 0x1f, len = readLen(add);
+    switch (major) {
+      case 0: return len;
+      case 2: { const s = bytes.slice(pos, pos + len); pos += len; return s; }
+      case 3: { const s = bytes.slice(pos, pos + len); pos += len; return new TextDecoder().decode(s); }
+      case 4: { const a = []; for (let i = 0; i < len; i++) a.push(decode()); return a; }
+      case 5: { const m = {}; for (let i = 0; i < len; i++) { const k = decode(); m[k] = decode(); } return m; }
+      default: throw new Error(`cbor: unsupported major type ${major}`);
+    }
+  }
+  return decode();
+}
+
+async function verifyiOSAttestationNonce(challengeNonce, attestation) {
+  try {
+    const attBytes = base64urlDecode(attestation);
+    const attObj   = cborDecode(attBytes);
+    if (attObj.fmt !== 'apple-appattest') return false;
+
+    const authData = attObj.authData;
+    const x5c      = attObj.attStmt && attObj.attStmt.x5c;
+    if (!authData || !x5c || !x5c[0]) return false;
+
+    const leafCert = x5c[0] instanceof Uint8Array ? x5c[0] : new Uint8Array(x5c[0]);
+
+    const enc            = new TextEncoder();
+    const clientDataHash = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(challengeNonce)));
+
+    const combined = new Uint8Array(authData.length + clientDataHash.length);
+    combined.set(authData, 0);
+    combined.set(clientDataHash, authData.length);
+    const expectedNonce = new Uint8Array(await crypto.subtle.digest('SHA-256', combined));
+
+    for (let i = 0; i <= leafCert.length - 32; i++) {
+      let ok = true;
+      for (let j = 0; j < 32; j++) {
+        if (leafCert[i + j] !== expectedNonce[j]) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function createJWT(payload, secret) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const enc = new TextEncoder();
@@ -175,8 +269,38 @@ async function authenticateRequest(request, env) {
   return null;
 }
 
-// In-memory nonce store (per-isolate; short-lived challenges)
-const challengeMap = new Map();
+// D1-backed challenge store (shared across all Worker isolates)
+const CHALLENGE_TTL_SECONDS = 60;
+
+async function issueChallenge(deviceId, env) {
+  const buf   = new Uint8Array(32);
+  crypto.getRandomValues(buf);
+  const nonce = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  const now   = Math.floor(Date.now() / 1000);
+
+  await env.DB.prepare(`
+    INSERT INTO challenges (device_id, nonce, created_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(device_id) DO UPDATE SET nonce = excluded.nonce, created_at = excluded.created_at
+  `).bind(deviceId, nonce, now).run();
+
+  env.DB.prepare('DELETE FROM challenges WHERE created_at < ?')
+    .bind(now - CHALLENGE_TTL_SECONDS).run().catch(() => {});
+
+  return nonce;
+}
+
+async function consumeChallenge(deviceId, env) {
+  const now = Math.floor(Date.now() / 1000);
+  const row = await env.DB.prepare(
+    'SELECT nonce FROM challenges WHERE device_id = ? AND created_at >= ?'
+  ).bind(deviceId, now - CHALLENGE_TTL_SECONDS).first();
+
+  if (!row) return null;
+
+  await env.DB.prepare('DELETE FROM challenges WHERE device_id = ?').bind(deviceId).run();
+  return row.nonce;
+}
 
 // TIMING CONSTANTS
 const QUESTION_TIME = 12;      // seconds for answering
@@ -228,7 +352,7 @@ export default {
     const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
     const rateBucket = rateLimitBucketFor(url.pathname, request.method);
     const maxRequests = RATE_LIMIT_MAX_REQUESTS[rateBucket] ?? RATE_LIMIT_MAX_REQUESTS.default;
-    const limit = checkRateLimit(clientIP, rateBucket, maxRequests);
+    const limit = await checkRateLimit(clientIP, rateBucket, maxRequests, env);
     if (limit.limited) {
       return jsonResponse({
         error: 'Too many requests',
@@ -248,14 +372,7 @@ export default {
         if (!deviceId || deviceId.length > 200) {
           return jsonResponse({ error: 'deviceId required' }, 400, corsHeaders);
         }
-        const buf = new Uint8Array(32);
-        crypto.getRandomValues(buf);
-        const nonce = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
-        challengeMap.set(deviceId, { nonce, created: Date.now() });
-        // Expire old challenges
-        for (const [k, v] of challengeMap) {
-          if (Date.now() - v.created > 300_000) challengeMap.delete(k);
-        }
+        const nonce = await issueChallenge(deviceId, env);
         return jsonResponse({ challenge: nonce }, 200, corsHeaders);
       }
 
@@ -291,12 +408,11 @@ export default {
           return jsonResponse(tokens, 200, corsHeaders);
         }
 
-        // Real attestation: verify challenge was issued
-        const challenge = challengeMap.get(deviceId);
-        if (!challenge) {
+        // Real attestation: consume the challenge (single-use, D1-backed)
+        const challengeNonce = await consumeChallenge(deviceId, env);
+        if (!challengeNonce) {
           return jsonResponse({ error: 'No challenge found — request /auth/challenge first' }, 400, corsHeaders);
         }
-        challengeMap.delete(deviceId);
 
         if (!attestation || !keyId) {
           return jsonResponse({ error: 'attestation and keyId required' }, 400, corsHeaders);
@@ -313,7 +429,7 @@ export default {
           }
 
           const signatureValid = await verifyAndroidChallengeSignature({
-            challengeNonce: challenge.nonce,
+            challengeNonce,
             deviceId,
             keyId,
             attestation,
@@ -337,9 +453,13 @@ export default {
           return jsonResponse(tokens, 200, corsHeaders);
         }
 
-        // iOS path: store attestation metadata.
-        // Full server-side Apple attestation verification requires CBOR and
-        // certificate-chain validation, which is intentionally deferred here.
+        // iOS path: verify Apple App Attest nonce binding
+        const nonceValid = await verifyiOSAttestationNonce(challengeNonce, attestation);
+        if (!nonceValid) {
+          console.warn(JSON.stringify({ level: 'warn', event: 'ios_attest_nonce_fail', deviceId }));
+          return jsonResponse({ error: 'Invalid iOS attestation' }, 403, corsHeaders);
+        }
+
         await env.DB.prepare(`
           INSERT INTO attestations (device_id, key_id, attested_at, last_token_at, revoked)
           VALUES (?, ?, unixepoch(), unixepoch(), 0)
@@ -628,15 +748,40 @@ async function handleGetRound(roundId, env, corsHeaders) {
   }, 200, corsHeaders);
 }
 
+function calculateServerScore(answers, questions) {
+  if (!Array.isArray(answers) || answers.length === 0) return null;
+
+  const questionIdSet = new Set(questions.map(q => q.id));
+
+  let score = 0;
+  let totalTime = 0;
+
+  for (const ans of answers) {
+    if (typeof ans.questionId !== 'string') return null;
+    if (typeof ans.timeRemaining !== 'number' || !Number.isFinite(ans.timeRemaining)) return null;
+    if (typeof ans.isCorrect !== 'boolean') return null;
+    if (!questionIdSet.has(ans.questionId)) return null;
+
+    const t = Math.max(0, Math.min(QUESTION_TIME, ans.timeRemaining));
+    totalTime += t;
+    if (ans.isCorrect) {
+      score += Math.floor(1000 * (t / QUESTION_TIME));
+    }
+  }
+
+  const completionTime = Math.max(0, answers.length * QUESTION_TIME - totalTime);
+  return { score, completionTime };
+}
+
 // Submit score for a round
 async function handleSubmitScore(request, roundId, env, corsHeaders) {
   let body;
   try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid JSON body' }, 400, corsHeaders); }
-  
+
   // Validate required fields
-  if (!body.userId || !body.username || body.score === undefined || body.completionTime === undefined) {
+  if (!body.userId || !body.username || body.completionTime === undefined) {
     return jsonResponse({
-      error: 'Missing required fields: userId, username, score, completionTime'
+      error: 'Missing required fields: userId, username, completionTime'
     }, 400, corsHeaders);
   }
 
@@ -644,22 +789,21 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
   if (typeof body.userId !== 'string' || body.userId.length > 100) {
     return jsonResponse({ error: 'Invalid userId' }, 400, corsHeaders);
   }
-  if (typeof body.username !== 'string' || body.username.length < 1 || body.username.length > 50) {
+  const trimmedUsername = typeof body.username === 'string' ? body.username.trim() : '';
+  if (trimmedUsername.length < 1 || trimmedUsername.length > 50) {
     return jsonResponse({ error: 'Invalid username (1-50 characters)' }, 400, corsHeaders);
   }
-  if (!/^[a-zA-Z0-9\s\-_.]+$/.test(body.username)) {
+  if (!/^[a-zA-Z0-9\s\-_.]+$/.test(trimmedUsername)) {
     return jsonResponse({ error: 'Username contains invalid characters' }, 400, corsHeaders);
   }
-  if (typeof body.score !== 'number' || !Number.isFinite(body.score) || body.score < 0 || body.score > 10000) {
-    return jsonResponse({ error: 'Invalid score (0-10000)' }, 400, corsHeaders);
-  }
+  body.username = trimmedUsername;
   if (typeof body.completionTime !== 'number' || !Number.isFinite(body.completionTime) || body.completionTime < 0 || body.completionTime > 300) {
     return jsonResponse({ error: 'Invalid completionTime (0-300)' }, 400, corsHeaders);
   }
 
   // Verify round exists and is within submission window
   const round = await env.DB.prepare(
-    'SELECT id, start_time FROM rounds WHERE id = ?'
+    'SELECT id, start_time, question_ids FROM rounds WHERE id = ?'
   ).bind(roundId).first();
 
   if (!round) {
@@ -673,17 +817,39 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
     return jsonResponse({ error: 'Round expired — submissions are closed' }, 400, corsHeaders);
   }
 
+  // Server-side scoring — client-supplied score is ignored entirely
+  if (!Array.isArray(body.answers) || body.answers.length === 0) {
+    return jsonResponse({ error: 'answers array is required' }, 400, corsHeaders);
+  }
+
+  const questionIds = JSON.parse(round.question_ids);
+  const placeholders = questionIds.map(() => '?').join(',');
+  const questionsResult = await env.DB.prepare(
+    `SELECT id FROM questions WHERE id IN (${placeholders})`
+  ).bind(...questionIds).all();
+
+  if (!questionsResult.success || questionsResult.results.length === 0) {
+    return jsonResponse({ error: 'Failed to load round questions for scoring' }, 500, corsHeaders);
+  }
+
+  const serverScored = calculateServerScore(body.answers, questionsResult.results);
+  if (!serverScored) {
+    return jsonResponse({ error: 'Invalid answers payload' }, 400, corsHeaders);
+  }
+
+  const finalScore = serverScored.score;
+  const finalCompletionTime = Math.floor(serverScored.completionTime);
+
   // First submission wins — reject duplicates
   const existing = await env.DB.prepare(
     'SELECT score FROM scores WHERE round_id = ? AND user_id = ?'
   ).bind(roundId, body.userId).first();
 
   if (existing) {
-    // Return existing score instead of allowing update
     const existingRank = await env.DB.prepare(`
       SELECT COUNT(*) + 1 as rank FROM scores
       WHERE round_id = ? AND (score > ? OR (score = ? AND completion_time < ?))
-    `).bind(roundId, existing.score, existing.score, Math.floor(body.completionTime)).first();
+    `).bind(roundId, existing.score, existing.score, finalCompletionTime).first();
     return jsonResponse({
       success: true,
       rank: existingRank.rank,
@@ -700,8 +866,8 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
     roundId,
     body.userId,
     body.username,
-    body.score,
-    Math.floor(body.completionTime)
+    finalScore,
+    finalCompletionTime
   ).run();
 
   // Update username on all past scores for this user (in case they changed it)
@@ -717,12 +883,12 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
       score > ? OR
       (score = ? AND completion_time < ?)
     )
-  `).bind(roundId, body.score, body.score, Math.floor(body.completionTime)).first();
-  
+  `).bind(roundId, finalScore, finalScore, finalCompletionTime).first();
+
   return jsonResponse({
     success: true,
     rank: rankResult.rank,
-    score: body.score,
+    score: finalScore,
   }, 200, corsHeaders);
 }
 
@@ -909,51 +1075,31 @@ async function handleDeleteUser(userId, env, corsHeaders) {
   return jsonResponse({ success: true }, 200, corsHeaders);
 }
 
-// Helper: Select random questions from database, avoiding recent repeats
 async function selectRandomQuestions(db, count) {
-  // Look back 30 rounds (~2 hours) to avoid repeating questions
-  const LOOKBACK_ROUNDS = 30;
+  const LOOKBACK_ROUNDS = 20;
 
-  const recentRounds = await db.prepare(`
-    SELECT question_ids FROM rounds
-    ORDER BY start_time DESC
-    LIMIT ?
-  `).bind(LOOKBACK_ROUNDS).all();
-
-  // Collect all recently used question IDs
-  const usedIds = new Set();
-  if (recentRounds.success) {
-    for (const row of recentRounds.results) {
-      try {
-        const ids = JSON.parse(row.question_ids);
-        for (const id of ids) usedIds.add(id);
-      } catch { /* skip malformed rows */ }
-    }
-  }
-
-  // Try to select only from unused questions
-  if (usedIds.size > 0) {
-    const placeholders = Array.from(usedIds).map(() => '?').join(',');
-    const result = await db.prepare(`
-      SELECT id FROM questions
-      WHERE id NOT IN (${placeholders})
-      ORDER BY RANDOM()
-      LIMIT ?
-    `).bind(...usedIds, count).all();
-
-    if (result.success && result.results.length >= count) {
-      return result.results.map(row => row.id);
-    }
-  }
-
-  // Fallback: not enough unused questions — pull from full pool
   const result = await db.prepare(`
+    SELECT id FROM questions
+    WHERE id NOT IN (
+      SELECT DISTINCT je.value
+      FROM (SELECT question_ids FROM rounds ORDER BY start_time DESC LIMIT ?) r
+      JOIN json_each(r.question_ids) je
+    )
+    ORDER BY RANDOM()
+    LIMIT ?
+  `).bind(LOOKBACK_ROUNDS, count).all();
+
+  if (result.success && result.results.length >= count) {
+    return result.results.map(row => row.id);
+  }
+
+  const fallback = await db.prepare(`
     SELECT id FROM questions ORDER BY RANDOM() LIMIT ?
   `).bind(count).all();
 
-  if (!result.success || result.results.length === 0) {
+  if (!fallback.success || fallback.results.length === 0) {
     throw new Error('No questions available in database');
   }
 
-  return result.results.map(row => row.id);
+  return fallback.results.map(row => row.id);
 }
