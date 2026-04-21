@@ -36,7 +36,7 @@ private enum LiveStateFetchError: LocalizedError {
 @MainActor
 final class LiveTriviaManager: ObservableObject {
     static let shared = LiveTriviaManager()
-    
+
     // MARK: - Published State
     @Published private(set) var liveState: LiveTriviaState?
     @Published private(set) var currentQuestions: [TriviaQuestion] = []
@@ -44,6 +44,8 @@ final class LiveTriviaManager: ObservableObject {
     @Published private(set) var error: Error?
     @Published private(set) var userSession: UserAnswerSession?
     @Published private(set) var recentPointsAward: PointsAwardEvent?
+    /// Rank returned by the server after score submission for the most recent round.
+    @Published private(set) var lastRoundRank: Int? = nil
 
     /// Locally-computed phase/question derived from roundStartTime + clock.
     /// Updated every 50ms by the local tick timer. Views should prefer this
@@ -54,7 +56,7 @@ final class LiveTriviaManager: ObservableObject {
 
     // MARK: - Answer Elimination
     @Published private(set) var eliminatedIndices: Set<Int> = []
-    private var eliminationQuestionIndex: Int = -1  // Track which question eliminations are for
+    private var eliminationQuestionIndex: Int = -1
     private var hasEliminatedFirst: Bool = false
     private var hasEliminatedSecond: Bool = false
 
@@ -73,6 +75,8 @@ final class LiveTriviaManager: ObservableObject {
     // Cache balanced questions keyed by round ID to avoid re-balancing on every sync
     private var cachedBalancedRoundId: String?
     private var lastStreakHapticQuestionIndex: Int = -1
+    // Dedup: track which roundId has already had its score submitted
+    private var submittedRoundId: String?
 
     // Scene phase observation for background/foreground
     private var scenePhaseObserver: Any?
@@ -104,18 +108,14 @@ final class LiveTriviaManager: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
     }
-    
+
     // MARK: - Public Methods
-    
+
     /// Start syncing with live trivia state
     func startSync() {
         guard syncTimer == nil else { return }
         currentSyncInterval = questionSyncInterval
         isBackingOff = false
-
-        #if DEBUG
-        Swift.print("Starting live trivia sync (interval: \(currentSyncInterval)s)...")
-        #endif
 
         // Load question bank if needed
         if TriviaBank.shared.questions.isEmpty {
@@ -145,12 +145,9 @@ final class LiveTriviaManager: ObservableObject {
             }
         }
     }
-    
+
     /// Stop syncing
     func stopSync() {
-        #if DEBUG
-        Swift.print("Stopping live trivia sync")
-        #endif
         syncTimer?.invalidate()
         syncTimer = nil
         localTickTimer?.invalidate()
@@ -160,10 +157,16 @@ final class LiveTriviaManager: ObservableObject {
     /// 50ms tick timer that computes phase/question locally from roundStartTime
     private func startLocalTickTimer() {
         localTickTimer?.invalidate()
+        // Timer fires on the main run loop (startLocalTickTimer is called from @MainActor context).
+        // Using Task { @MainActor in } queues work asynchronously and can build up a backlog
+        // during SwiftUI animation cycles, causing localQuestionIndex to lag behind real time.
+        // This delay can prevent dismissJoinWaitIfNeeded() from releasing the gate at the Q9→Q10
+        // boundary, causing Q10 to never show. DispatchQueue.main.async is FIFO and processes
+        // promptly without actor scheduling overhead.
         localTickTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in
-                self.updateLocalState()
+            DispatchQueue.main.async { [weak self] in
+                self?.updateLocalState()
             }
         }
     }
@@ -195,11 +198,11 @@ final class LiveTriviaManager: ObservableObject {
 
         adjustSyncIntervalForCurrentPhase()
     }
-    
+
     /// Fetch current live state from API
     func fetchLiveState() async {
         let url = URL(string: "\(baseURL)/api/live-state")!
-        
+
         do {
             let (data, response) = try await SecureSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse else {
@@ -219,7 +222,7 @@ final class LiveTriviaManager: ObservableObject {
             } catch {
                 throw LiveStateFetchError.decodeFailed(responseSnippet(from: data))
             }
-            
+
             // Check if round changed
             let roundChanged = liveState?.roundId != newState.roundId
 
@@ -231,8 +234,11 @@ final class LiveTriviaManager: ObservableObject {
                 handleRoundChange(newState)
             }
 
-            // Load questions for this round if needed
-            if currentQuestions.isEmpty || roundChanged {
+            // Restore a saved session if the user closed and reopened within the same round
+            restoreSessionIfNeeded(for: newState.roundId)
+
+            // Load questions for this round if needed (or retry if we got a partial set)
+            if currentQuestions.isEmpty || roundChanged || currentQuestions.count < newState.questionIds.count {
                 await loadQuestions(for: newState)
             }
 
@@ -247,10 +253,6 @@ final class LiveTriviaManager: ObservableObject {
             }
 
         } catch {
-            #if DEBUG
-            Swift.print("Failed to fetch live state:", error.localizedDescription)
-            #endif
-
             if case let LiveStateFetchError.httpStatus(code, _, retryAfter) = error, code == 429 {
                 // Avoid noisy reconnect UI while we are intentionally waiting out rate limits.
                 self.error = nil
@@ -264,9 +266,6 @@ final class LiveTriviaManager: ObservableObject {
                     currentSyncInterval = wait
                     scheduleSyncTimer()
                 }
-                #if DEBUG
-                Swift.print("Rate limited (429): retrying live state in \(currentSyncInterval)s")
-                #endif
                 return
             }
 
@@ -279,9 +278,6 @@ final class LiveTriviaManager: ObservableObject {
             if newInterval != currentSyncInterval {
                 currentSyncInterval = newInterval
                 scheduleSyncTimer()
-                #if DEBUG
-                Swift.print("Backoff: sync interval now \(currentSyncInterval)s")
-                #endif
             }
         }
     }
@@ -292,8 +288,13 @@ final class LiveTriviaManager: ObservableObject {
             return questionSyncInterval
         case .explanation:
             return explanationSyncInterval
-        case .results, .leaderboard:
+        case .results:
             return postQuizSyncInterval
+        case .leaderboard:
+            // Ramp up to fast polling in the final seconds of the leaderboard (and any time
+            // after it expires) so the new round is detected within ~1s of it starting.
+            // Without this, the 3-second poll cadence can leave Q1 with only ~9s on the clock.
+            return localSecondsRemaining <= 5.0 ? questionSyncInterval : postQuizSyncInterval
         }
     }
 
@@ -304,7 +305,7 @@ final class LiveTriviaManager: ObservableObject {
         currentSyncInterval = target
         scheduleSyncTimer()
     }
-    
+
     /// Record user's answer for current question (allows changing selection)
     func recordAnswer(
         selectedIndex: Int,
@@ -354,6 +355,9 @@ final class LiveTriviaManager: ObservableObject {
             timeRemaining: timeRemaining
         )
 
+        // Persist after every answer so a mid-round close can be recovered
+        saveSession()
+
         if let session = userSession {
             let streak = currentCorrectStreak(in: session, through: qIndex)
             if isCorrect && pointsEarned > 0 {
@@ -370,12 +374,8 @@ final class LiveTriviaManager: ObservableObject {
         }
 
         HapticManager.answerSelected()
-
-        #if DEBUG
-        Swift.print("Recorded answer for Q\(qIndex + 1): \(isCorrect ? "correct" : "wrong") +\(pointsEarned) pts")
-        #endif
     }
-    
+
     /// Submit final score to leaderboard
     func submitScore() async {
         guard let session = userSession,
@@ -383,37 +383,43 @@ final class LiveTriviaManager: ObservableObject {
               session.questionsAnswered > 0 else {
             return
         }
-        
+
+        // Prevent duplicate submissions for the same round
+        guard submittedRoundId != state.roundId else { return }
+        submittedRoundId = state.roundId
+
         let userId = getUserId()
         let username = getUsername()
-        
-        #if DEBUG
-        Swift.print("Submitting score: \(session.totalScore) pts (\(session.questionsAnswered)/10 questions)")
-        #endif
-        
+
         do {
             // Calculate completion time (full round or partial)
             let completionTime = session.questionsAnswered * 22  // 22 seconds per question (12s question + 10s explanation)
-            
+
+            // Build answers array for server-side scoring
+            let answers: [AnswerSubmission] = session.answers.values.compactMap { ans in
+                AnswerSubmission(
+                    questionId: ans.questionId,
+                    selectedIndex: ans.selectedIndex,
+                    timeRemaining: ans.timeRemaining,
+                    isCorrect: ans.isCorrect
+                )
+            }
+
             let response = try await ContestManager.shared.submitScore(
                 roundId: state.roundId,
                 userId: userId,
                 username: username,
                 score: session.totalScore,
-                completionTime: TimeInterval(completionTime)
+                completionTime: TimeInterval(completionTime),
+                answers: answers
             )
-            
-            #if DEBUG
-            Swift.print("Score submitted! Rank: #\(response.rank)")
-            #endif
-            
+            lastRoundRank = response.rank
+            clearSavedSession()
         } catch {
-            #if DEBUG
-            Swift.print("Failed to submit score:", error.localizedDescription)
-            #endif
+            // Score submission failed — will not retry to avoid duplicate submissions
         }
     }
-    
+
     /// Get current question being shown (uses local timing)
     func getCurrentQuestion() -> TriviaQuestion? {
         guard liveState != nil,
@@ -434,16 +440,49 @@ final class LiveTriviaManager: ObservableObject {
         localQuestionIndex >= 0 && localQuestionIndex < 10
             && (localPhase == .question || localPhase == .explanation)
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func handleRoundChange(_ newState: LiveTriviaState) {
         // Score submission happens during RESULTS phase, not here
-        // Reset for new round
+        // Reset for new round and discard any saved session from the previous round
+        clearSavedSession()
         userSession = UserAnswerSession(roundId: newState.roundId)
         recentPointsAward = nil
+        lastRoundRank = nil
         lastStreakHapticQuestionIndex = -1
+        submittedRoundId = nil  // Allow submission for the new round
         resetEliminations()
+    }
+
+    // MARK: - Session persistence (survive app close/reopen within same round)
+
+    private let savedSessionKey = "contest_saved_session"
+
+    /// Persist the current session to UserDefaults after every answer.
+    private func saveSession() {
+        guard let session = userSession else { return }
+        if let data = try? JSONEncoder().encode(session.snapshot()) {
+            UserDefaults.standard.set(data, forKey: savedSessionKey)
+        }
+    }
+
+    /// On app relaunch, restore answers if the saved round ID matches the current round.
+    private func restoreSessionIfNeeded(for roundId: String) {
+        guard userSession == nil || userSession?.roundId != roundId else { return }
+        guard let data = UserDefaults.standard.data(forKey: savedSessionKey),
+              let snapshot = try? JSONDecoder().decode(UserAnswerSession.Snapshot.self, from: data),
+              snapshot.roundId == roundId,
+              !snapshot.answers.isEmpty else { return }
+
+        let session = UserAnswerSession(roundId: roundId)
+        session.restore(from: snapshot)
+        userSession = session
+    }
+
+    /// Discard a saved session (new round started or score successfully submitted).
+    private func clearSavedSession() {
+        UserDefaults.standard.removeObject(forKey: savedSessionKey)
     }
 
     /// Update answer eliminations based on locally-computed timer
@@ -493,27 +532,43 @@ final class LiveTriviaManager: ObservableObject {
         hasEliminatedSecond = false
         eliminationQuestionIndex = -1
     }
-    
-    private func loadQuestions(for state: LiveTriviaState) async {
-        // Return cached result if already balanced for this round
-        if cachedBalancedRoundId == state.roundId, !currentQuestions.isEmpty { return }
 
+    private func loadQuestions(for state: LiveTriviaState) async {
+        // Return cached result only if we have ALL questions for this round
+        if cachedBalancedRoundId == state.roundId,
+           currentQuestions.count >= state.questionIds.count { return }
+
+        let seed = UInt64(state.roundStartTime.timeIntervalSince1970)
+
+        #if targetEnvironment(simulator)
+        // In simulator builds the AppAttest debug endpoint is disabled on the production server.
+        // Use TriviaBank directly to avoid 403 errors and the resulting 1-second retry spam.
+        let allQuestions = TriviaBank.shared.questions
+        let orderedQuestions = state.questionIds.compactMap { id in
+            allQuestions.first { $0.id == id }
+        }
+        self.currentQuestions = AnswerPositionBalancer.balancedShuffled(orderedQuestions, seed: seed)
+        cachedBalancedRoundId = state.roundId
+        #else
         do {
             let questions = try await fetchQuestionsFromAPI(ids: state.questionIds)
-            let seed = UInt64(state.roundStartTime.timeIntervalSince1970)
             self.currentQuestions = AnswerPositionBalancer.balancedShuffled(questions, seed: seed)
+            cachedBalancedRoundId = state.roundId
         } catch {
-            // Fallback to TriviaBank
+            // Fallback to TriviaBank — only cache if we found all questions
             let allQuestions = TriviaBank.shared.questions
             let orderedQuestions = state.questionIds.compactMap { id in
                 allQuestions.first { $0.id == id }
             }
-            let seed = UInt64(state.roundStartTime.timeIntervalSince1970)
             self.currentQuestions = AnswerPositionBalancer.balancedShuffled(orderedQuestions, seed: seed)
+            if orderedQuestions.count >= state.questionIds.count {
+                cachedBalancedRoundId = state.roundId
+            }
+            // If partial, leave cachedBalancedRoundId unset so the next sync retries
         }
-        cachedBalancedRoundId = state.roundId
+        #endif
     }
-    
+
     /// Fetch questions from API by IDs
     private func fetchQuestionsFromAPI(ids: [String]) async throws -> [TriviaQuestion] {
         try await AppAttestManager.shared.ensureAuthenticated()
@@ -556,11 +611,11 @@ final class LiveTriviaManager: ObservableObject {
         let apiResponse = try Self.decoder.decode(QuestionsAPIResponse.self, from: data)
         return apiResponse.questions
     }
-    
+
     private func getUserId() -> String {
         KeychainHelper.getOrCreateUserId()
     }
-    
+
     private func getUsername() -> String {
         let username = KeychainHelper.getOrCreateUsername()
         return username.isEmpty ? "Anonymous" : username
@@ -642,7 +697,10 @@ private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escapin
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             throw CancellationError()
         }
-        let result = try await group.next()!
+        guard let result = try await group.next() else {
+            group.cancelAll()
+            throw CancellationError()
+        }
         group.cancelAll()
         return result
     }

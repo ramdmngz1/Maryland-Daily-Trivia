@@ -77,6 +77,12 @@ struct SettingsView: View {
                                 urlString: "https://www.copanostudios.com/support-maryland-daily-trivia"
                             )
                             rowDivider
+                            linkRow(
+                                icon: "flag.fill",
+                                title: "Report Offensive Username",
+                                urlString: "mailto:support@copanostudios.com?subject=Report%20Offensive%20Username"
+                            )
+                            rowDivider
                             Text("© 2026 Copano Studios. Not affiliated with the State of Maryland.")
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(textSecondary)

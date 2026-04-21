@@ -27,8 +27,8 @@
               "value" : false
             }
           ],
-          "image-name" : "texas-trivia-icon-transparent-for-icon-composer-1024.png",
-          "name" : "texas-trivia-icon-transparent-for-icon-composer-1024",
+          "image-name" : "maryland-trivia-icon-transparent-for-icon-composer-1024.png",
+          "name" : "maryland-trivia-icon-transparent-for-icon-composer-1024",
           "opacity" : 1
         }
       ],
@@ -56,8 +56,8 @@
               "value" : true
             }
           ],
-          "image-name" : "texas-trivia-background-only-1024.png",
-          "name" : "texas-trivia-background-only-1024",
+          "image-name" : "maryland-trivia-background-only-1024.png",
+          "name" : "maryland-trivia-background-only-1024",
           "position-specializations" : [
             {
               "idiom" : "watchOS",

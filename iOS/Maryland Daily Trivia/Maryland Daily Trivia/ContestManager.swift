@@ -71,7 +71,8 @@ final class ContestManager: ObservableObject {
         userId: String,
         username: String,
         score: Int,
-        completionTime: TimeInterval
+        completionTime: TimeInterval,
+        answers: [AnswerSubmission] = []
     ) async throws -> ScoreSubmissionResponse {
         try await AppAttestManager.shared.ensureAuthenticated()
 
@@ -79,7 +80,8 @@ final class ContestManager: ObservableObject {
             userId: userId,
             username: username,
             score: score,
-            completionTime: completionTime
+            completionTime: completionTime,
+            answers: answers
         )
         let bodyData = try JSONEncoder().encode(submission)
 
@@ -243,12 +245,21 @@ struct ContestRound: Codable, Identifiable {
     }
 }
 
+/// A single answer sent to the server for score verification
+struct AnswerSubmission: Codable {
+    let questionId: String
+    let selectedIndex: Int
+    let timeRemaining: Double
+    let isCorrect: Bool
+}
+
 /// Request body for submitting a score
 struct ScoreSubmission: Codable {
     let userId: String
     let username: String
     let score: Int
     let completionTime: TimeInterval
+    let answers: [AnswerSubmission]
 }
 
 /// Response after submitting a score

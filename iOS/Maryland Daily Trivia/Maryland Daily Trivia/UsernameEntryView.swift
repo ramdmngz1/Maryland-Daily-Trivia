@@ -22,6 +22,13 @@ struct UsernameEntryView: View {
     @FocusState private var isFocused: Bool
     @Environment(\.colorScheme) var colorScheme
 
+    private static let maxUsernameLength = 20
+    private static let blockedTerms: Set<String> = [
+        "asshole", "bitch", "cunt", "dick", "fag", "fuck", "hitler", "nazi",
+        "nigger", "porn", "sex", "shit", "slut", "whore", "xxx"
+    ]
+    private static let disallowedNameSeparator = CharacterSet.alphanumerics.inverted
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -76,16 +83,24 @@ struct UsernameEntryView: View {
                             .focused($isFocused)
                             .autocorrectionDisabled()
                             .onChange(of: inputName) { newValue in
-                                if newValue.count > 20 {
-                                    inputName = String(newValue.prefix(20))
+                                if newValue.count > Self.maxUsernameLength {
+                                    inputName = String(newValue.prefix(Self.maxUsernameLength))
                                 }
                             }
 
-                        Text("\(inputName.count)/20")
+                        Text("\(inputName.count)/\(Self.maxUsernameLength)")
                             .font(.system(size: 11))
-                            .foregroundStyle(inputName.count >= 20 ? ColorTheme.warning : ColorTheme.textMuted)
+                            .foregroundStyle(inputName.count >= Self.maxUsernameLength ? ColorTheme.warning : ColorTheme.textMuted)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .padding(.trailing, 4)
+
+                        if let validationMessage {
+                            Text(validationMessage)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(ColorTheme.warning)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.leading, 4)
+                        }
                     }
                     .padding(.horizontal, 32)
 
@@ -102,14 +117,14 @@ struct UsernameEntryView: View {
                         .frame(height: 52)
                         .foregroundStyle(.white)
                         .background(
-                            sanitized(inputName).trimmingCharacters(in: .whitespaces).isEmpty
+                            !canSave
                                 ? LinearGradient(colors: [Color.gray.opacity(0.4), Color.gray.opacity(0.4)], startPoint: .leading, endPoint: .trailing)
                                 : LinearGradient(colors: [ColorTheme.accent, ColorTheme.neon], startPoint: .leading, endPoint: .trailing)
                         )
                         .cornerRadius(14)
-                        .shadow(color: sanitized(inputName).trimmingCharacters(in: .whitespaces).isEmpty ? .clear : (colorScheme == .dark ? ColorTheme.neon.opacity(0.3) : ColorTheme.accent.opacity(0.25)), radius: 12, x: 0, y: 4)
+                        .shadow(color: !canSave ? .clear : (colorScheme == .dark ? ColorTheme.neon.opacity(0.3) : ColorTheme.accent.opacity(0.25)), radius: 12, x: 0, y: 4)
                     }
-                    .disabled(sanitized(inputName).trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canSave)
                     .padding(.horizontal, 32)
 
                     Spacer()
@@ -173,25 +188,50 @@ struct UsernameEntryView: View {
         }
     }
 
+    private var canSave: Bool {
+        validationMessage == nil
+    }
+
+    private var validationMessage: String? {
+        validate(raw: inputName)
+    }
+
     private func sanitized(_ raw: String) -> String {
         // Allow letters, numbers, spaces, and -_.
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_."))
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let filteredScalars = trimmed.unicodeScalars.map { allowed.contains($0) ? Character($0) : Character(" ") }
         var result = String(filteredScalars).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        // Collapse multiple spaces and cap length to 20 chars
-        if result.count > 20 {
-            result = String(result.prefix(20))
+        // Collapse multiple spaces and cap length.
+        if result.count > Self.maxUsernameLength {
+            result = String(result.prefix(Self.maxUsernameLength))
         }
-        // Prevent empty or whitespace-only names
-        let fallback = "Anonymous"
-        let final = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return final.isEmpty ? fallback : final
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func validate(raw: String) -> String? {
+        let cleaned = sanitized(raw)
+        if cleaned.isEmpty {
+            return "Enter a username to continue."
+        }
+        if containsBlockedTerm(in: cleaned) {
+            return "Please choose a different username."
+        }
+        return nil
+    }
+
+    private func containsBlockedTerm(in value: String) -> Bool {
+        let tokens = value
+            .lowercased()
+            .components(separatedBy: Self.disallowedNameSeparator)
+            .filter { !$0.isEmpty }
+
+        return tokens.contains { Self.blockedTerms.contains($0) }
     }
 
     private func saveUsername() {
         let cleaned = sanitized(inputName)
-        guard !cleaned.isEmpty, cleaned != "Anonymous" || !inputName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard validate(raw: inputName) == nil else { return }
         username = cleaned
         KeychainHelper.saveUsername(cleaned)
         onSaved?()

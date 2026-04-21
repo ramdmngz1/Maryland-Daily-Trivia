@@ -3,17 +3,15 @@
 //  Maryland Daily Trivia
 //
 //  Created by Ramon Dominguez on 1/1/26.
-//  Updated: 2/10/26 - Trivia theme redesign
+//  Updated: 4/19/26 - Home screen style aligned to Maryland reference art
 //
 
 import SwiftUI
+import Foundation
 
 struct HomeView: View {
     @State private var showSettings = false
     @State private var showRulesAcknowledgement = false
-    @AppStorage(AppPreferences.reduceMotionKey) private var reduceMotionEnabled = false
-    @Environment(\.colorScheme) var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
 
     // Username entry
     @State private var showUsernameEntry = false
@@ -27,17 +25,18 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
-                HomeAmbientMotionLayer(isEnabled: !effectiveReduceMotion)
+                MarylandHomeMenuBackground()
 
-                ScrollView {
-                    VStack(spacing: 20) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 18) {
                         topBar
                         logoSection
-                        usernameBadge
-                        liveContestCard
+                        actionStack
+                        resetStrip
                         Spacer(minLength: 24)
                     }
+                    .frame(maxWidth: 430)
+                    .frame(maxWidth: .infinity)
                 }
             }
             .navigationBarHidden(true)
@@ -94,154 +93,84 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Top Bar
+    // MARK: - Main Sections
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Spacer()
+
             Button {
                 HapticManager.buttonTap()
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.title3)
-                    .foregroundStyle(ColorTheme.accent)
-                    .frame(width: 44, height: 44)
-                    .background(cardColor.opacity(0.8))
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(borderColor, lineWidth: 1))
+                    .font(.system(size: 16, weight: .black))
+                    .foregroundStyle(.yellow)
+                    .frame(width: 38, height: 38)
+                    .background(Color.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
             }
+            .accessibilityLabel("Settings")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+    }
 
-            Spacer()
+    private var logoSection: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color.yellow.opacity(0.18))
+                    .frame(width: 230, height: 230)
+                    .blur(radius: 24)
+
+                Image("MarylandLogoCutout")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 315)
+                    .shadow(color: .black.opacity(0.64), radius: 18, y: 10)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var actionStack: some View {
+        VStack(spacing: 12) {
+            NavigationLink {
+                LiveTriviaView()
+            } label: {
+                HomeMenuButton(title: "Start Game", icon: "play.fill", primary: true)
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                HapticManager.buttonTap()
+            })
+            .accessibilityLabel("Start Game")
 
             NavigationLink {
                 LeaderboardsView()
             } label: {
-                Image(systemName: "trophy.fill")
-                    .font(.title3)
-                    .foregroundStyle(ColorTheme.accent)
-                    .frame(width: 44, height: 44)
-                    .background(cardColor.opacity(0.8))
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(borderColor, lineWidth: 1))
+                HomeMenuButton(title: "Leaderboard", icon: "trophy.fill", primary: false)
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                HapticManager.buttonTap()
+            })
+            .accessibilityLabel("Leaderboard")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .padding(.horizontal, 24)
     }
 
-    // MARK: - Logo Section
-
-    private var logoSection: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                // Twinkling stars
-                HStack {
-                    TwinklingStar(delay: 0)
-                    Spacer()
-                    TwinklingStar(delay: 0.5)
-                    Spacer()
-                    TwinklingStar(delay: 1.0)
-                    Spacer()
-                    TwinklingStar(delay: 1.5)
-                }
-                .padding(.horizontal, 30)
-
-                VStack(spacing: 0) {
-                    ArmadilloSpriteView(size: 160)
-                        .padding(.bottom, -14)
-
-                    NeonText(text: "MARYLAND DAILY", size: 36)
-
-                    Text("TRIVIA")
-                        .font(.system(size: 12, weight: .bold))
-                        .tracking(4)
-                        .foregroundStyle(ColorTheme.textMuted)
-                }
-            }
-        }
-        .padding(.vertical, 0)
-    }
-
-    private var usernameBadge: some View {
-        Text(usernameDisplay)
-            .font(.system(size: 13, weight: .semibold, design: .serif))
-            .foregroundStyle(primaryText)
-            .lineLimit(1)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(cardColor.opacity(0.8))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(borderColor, lineWidth: 1))
-    }
-
-    // MARK: - Live Contest Card
-
-    private var liveContestCard: some View {
-        AppCard {
-            VStack(spacing: 16) {
-                // Header row
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            LiveDot()
-                            Text("LIVE NOW")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(ColorTheme.success)
-                                .tracking(1)
-                        }
-                        Text("Today's Round")
-                            .font(.system(size: 18, weight: .bold, design: .serif))
-                            .foregroundStyle(primaryText)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Players")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ColorTheme.textMuted)
-                        Text("\(activePlayerCount)")
-                            .font(.system(size: 22, weight: .bold, design: .serif))
-                            .foregroundStyle(ColorTheme.accent)
-                    }
-                }
-
-                // Category pills
-                HStack(spacing: 6) {
-                    ForEach(["History", "Geography", "Culture", "Sports", "Food"], id: \.self) { cat in
-                        CategoryPill(name: cat)
-                    }
-                }
-
-                // Start button
-                NavigationLink {
-                    LiveTriviaView()
-                } label: {
-                    HStack {
-                        Text("START QUIZ")
-                            .font(.system(size: 16, weight: .bold, design: .serif))
-                            .tracking(1)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .foregroundStyle(.white)
-                    .background(
-                        LinearGradient(
-                            colors: [ColorTheme.accent, ColorTheme.neon],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(14)
-                    .shadow(color: colorScheme == .dark ? ColorTheme.neon.opacity(0.3) : ColorTheme.accent.opacity(0.25), radius: 12, x: 0, y: 4)
-                }
-                .simultaneousGesture(TapGesture().onEnded {
-                    HapticManager.buttonTap()
-                })
-            }
-            .padding(20)
-        }
-        .padding(.horizontal, 20)
+    private var resetStrip: some View {
+        Text("Daily Challenge resets in: 03:12:44")
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.92))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(Color.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+            )
+            .padding(.horizontal, 24)
     }
 
     // MARK: - Data Fetching
@@ -268,87 +197,100 @@ struct HomeView: View {
 
     // MARK: - Helpers
 
-    private var cardColor: Color {
-        colorScheme == .dark ? ColorTheme.cardBg : .white
-    }
-
-    private var borderColor: Color {
-        colorScheme == .dark ? ColorTheme.cardBorder : ColorTheme.lightBorder
-    }
-
-    private var primaryText: Color {
-        colorScheme == .dark ? ColorTheme.textPrimary : Color(red: 0.165, green: 0.11, blue: 0.055)
-    }
-
     private var usernameDisplay: String {
         let cleaned = username.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? "Anonymous" : cleaned
     }
-
-    private var effectiveReduceMotion: Bool {
-        reduceMotionEnabled || systemReduceMotion
-    }
-
 }
 
-private struct HomeAmbientMotionLayer: View {
-    let isEnabled: Bool
-    @State private var drift = false
+private struct MarylandHomeMenuBackground: View {
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Image("LaunchIcon")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .blur(radius: 14)
+                    .scaleEffect(1.1)
+                    .saturation(1.12)
+                    .overlay(Color.black.opacity(0.4))
+
+                LinearGradient(
+                    colors: [.black.opacity(0.46), .clear, .black.opacity(0.56)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                RadialGradient(
+                    colors: [.yellow.opacity(0.12), .clear],
+                    center: .center,
+                    startRadius: 20,
+                    endRadius: 420
+                )
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+private struct HomeMenuButton: View {
+    let title: String
+    let icon: String
+    let primary: Bool
 
     var body: some View {
-        GeometryReader { geometry in
-            if isEnabled {
-                ZStack {
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    ColorTheme.neon.opacity(0.12),
-                                    ColorTheme.neon.opacity(0.015),
-                                    .clear
-                                ],
-                                center: .center,
-                                startRadius: 12,
-                                endRadius: 170
-                            )
-                        )
-                        .frame(width: 320, height: 320)
-                        .blur(radius: 42)
-                        .offset(
-                            x: drift ? geometry.size.width * 0.16 : -geometry.size.width * 0.14,
-                            y: drift ? -125 : 45
-                        )
+        let titleColor: Color = primary ? Color(red: 0.22, green: 0.10, blue: 0.04) : .white
 
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    ColorTheme.accent.opacity(0.09),
-                                    ColorTheme.accent.opacity(0.015),
-                                    .clear
-                                ],
-                                center: .center,
-                                startRadius: 8,
-                                endRadius: 150
-                            )
-                        )
-                        .frame(width: 260, height: 260)
-                        .blur(radius: 34)
-                        .offset(
-                            x: drift ? -geometry.size.width * 0.12 : geometry.size.width * 0.16,
-                            y: drift ? geometry.size.height * 0.1 : geometry.size.height * 0.03
-                        )
-                }
-                .opacity(0.3)
-                .allowsHitTesting(false)
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 14.0).repeatForever(autoreverses: true)) {
-                        drift.toggle()
-                    }
-                }
-            }
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .black))
+                .foregroundStyle(primary ? Color(red: 0.67, green: 0.06, blue: 0.05) : .yellow)
+                .frame(width: 38, height: 38)
+                .background(Color.black.opacity(primary ? 0.14 : 0.36), in: Circle())
+
+            Text(title)
+                .font(.system(size: 44, weight: .black, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+            Spacer(minLength: 0)
         }
-        .ignoresSafeArea()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .foregroundStyle(titleColor)
+        .background(
+            buttonGradient,
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(buttonStroke, lineWidth: 1.8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(primary ? 0.26 : 0.12), lineWidth: 0.7)
+                .padding(1.2)
+        )
+        .shadow(color: .black.opacity(primary ? 0.45 : 0.35), radius: 8, y: 4)
+    }
+
+    private var buttonGradient: LinearGradient {
+        if primary {
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.95, blue: 0.35), Color(red: 1.0, green: 0.82, blue: 0.10)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        return LinearGradient(
+            colors: [Color(red: 0.22, green: 0.14, blue: 0.12), Color(red: 0.13, green: 0.09, blue: 0.08)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var buttonStroke: Color {
+        primary ? Color(red: 0.88, green: 0.65, blue: 0.16) : Color.white.opacity(0.20)
     }
 }
 

@@ -104,14 +104,33 @@ class UserAnswerSession: ObservableObject {
     @Published var totalScore: Int = 0
     @Published var questionsAnswered: Int = 0
     
-    struct UserAnswer {
+    struct UserAnswer: Codable {
         let questionId: String
         let selectedIndex: Int
         let isCorrect: Bool
         let pointsEarned: Int
         let timeRemaining: Double
     }
-    
+
+    /// Codable snapshot used to persist a session across app restarts.
+    struct Snapshot: Codable {
+        let roundId: String
+        let answers: [Int: UserAnswer]
+        let totalScore: Int
+        let questionsAnswered: Int
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(roundId: roundId, answers: answers, totalScore: totalScore, questionsAnswered: questionsAnswered)
+    }
+
+    /// Restore a previously-saved snapshot into this session.
+    func restore(from snapshot: Snapshot) {
+        answers = snapshot.answers
+        totalScore = snapshot.totalScore
+        questionsAnswered = snapshot.questionsAnswered
+    }
+
     init(roundId: String) {
         self.roundId = roundId
     }

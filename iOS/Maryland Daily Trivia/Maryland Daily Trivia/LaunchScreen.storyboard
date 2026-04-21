@@ -14,19 +14,17 @@
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchIcon" translatesAutoresizingMaskIntoConstraints="NO" id="Knb-R3-p2Y">
-                                <rect key="frame" x="107" y="348" width="200" height="200"/>
-                                <constraints>
-                                    <constraint firstAttribute="width" constant="260" id="W1a-Bc-d2e"/>
-                                    <constraint firstAttribute="height" constant="260" id="H3f-Gh-i4j"/>
-                                </constraints>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchIcon" translatesAutoresizingMaskIntoConstraints="NO" id="Knb-R3-p2Y">
+                                <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                             </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="vDu-zF-Fre"/>
                         <color key="backgroundColor" red="0.093325" green="0.050917" blue="0.01493" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="Knb-R3-p2Y" firstAttribute="centerX" secondItem="5EZ-qb-Rvc" secondAttribute="centerX" id="Cx5-Kl-m6n"/>
-                            <constraint firstItem="Knb-R3-p2Y" firstAttribute="centerY" secondItem="5EZ-qb-Rvc" secondAttribute="centerY" id="Cy7-Op-q8r"/>
+                            <constraint firstItem="Knb-R3-p2Y" firstAttribute="top" secondItem="5EZ-qb-Rvc" secondAttribute="top" id="1aS-UJ-iS3"/>
+                            <constraint firstAttribute="trailing" secondItem="Knb-R3-p2Y" secondAttribute="trailing" id="A15-0q-Lsq"/>
+                            <constraint firstAttribute="bottom" secondItem="Knb-R3-p2Y" secondAttribute="bottom" id="c8N-bq-GvF"/>
+                            <constraint firstItem="Knb-R3-p2Y" firstAttribute="leading" secondItem="5EZ-qb-Rvc" secondAttribute="leading" id="p8d-CH-Ung"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -35,6 +33,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchIcon" width="1024" height="1024"/>
+        <image name="LaunchIcon" width="1024" height="1536"/>
     </resources>
 </document>

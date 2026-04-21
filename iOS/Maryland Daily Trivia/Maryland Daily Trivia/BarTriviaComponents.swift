@@ -33,7 +33,7 @@ struct WoodTextureOverlay: View {
     }
 }
 
-// MARK: - App Card (card with wood texture)
+// MARK: - App Card
 struct AppCard<Content: View>: View {
     @Environment(\.colorScheme) var colorScheme
     let content: Content
@@ -45,13 +45,24 @@ struct AppCard<Content: View>: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark ? ColorTheme.cardBg : .white)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [ColorTheme.cardBgHover.opacity(0.96), ColorTheme.cardBg.opacity(0.98)]
+                            : [Color.white, ColorTheme.lightCard],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             RoundedRectangle(cornerRadius: 16)
                 .stroke(colorScheme == .dark ? ColorTheme.cardBorder : ColorTheme.lightBorder, lineWidth: 1)
-            WoodTextureOverlay()
-                .clipShape(RoundedRectangle(cornerRadius: 16))
             content
         }
+        .shadow(
+            color: colorScheme == .dark ? Color.black.opacity(0.18) : Color.black.opacity(0.06),
+            radius: 12,
+            y: 5
+        )
     }
 }
 
@@ -150,8 +161,47 @@ struct AppBackground: View {
         ZStack {
             (colorScheme == .dark ? ColorTheme.darkBg : ColorTheme.lightBg)
                 .ignoresSafeArea()
-            WoodTextureOverlay()
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    .clear,
+                    (colorScheme == .dark ? Color.black.opacity(0.09) : Color.black.opacity(0.03))
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        }
+    }
+}
+
+// MARK: - Maryland Leaderboard Background
+struct MarylandLeaderboardBackground: View {
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Image("LaunchIcon")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .blur(radius: 17)
+                    .scaleEffect(1.08)
+                    .saturation(1.15)
+                    .overlay(Color.black.opacity(0.52))
+
+                LinearGradient(
+                    colors: [.black.opacity(0.53), .clear, .black.opacity(0.62)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                RadialGradient(
+                    colors: [Color(red: 1.0, green: 0.83, blue: 0.18).opacity(0.12), .clear],
+                    center: .center,
+                    startRadius: 8,
+                    endRadius: 420
+                )
+            }
+            .ignoresSafeArea()
         }
     }
 }

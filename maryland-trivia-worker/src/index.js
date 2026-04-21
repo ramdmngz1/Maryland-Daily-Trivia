@@ -77,9 +77,15 @@ async function checkRateLimit(ip, bucket, maxRequests, env) {
 
 // ROUND ID VALIDATION
 const ROUND_ID_REGEX = /^round_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/;
+const USERNAME_MAX_LENGTH = 20;
+const USERNAME_BLOCKLIST_REGEX = /\b(?:asshole|bitch|cunt|dick|fag|fuck|hitler|nazi|nigger|porn|sex|shit|slut|whore|xxx)\b/i;
 
 function isValidRoundId(roundId) {
   return typeof roundId === 'string' && ROUND_ID_REGEX.test(roundId);
+}
+
+function isBlockedUsername(username) {
+  return USERNAME_BLOCKLIST_REGEX.test(username);
 }
 
 // ── JWT HELPERS (HS256 via Web Crypto) ──────────────────────────────
@@ -758,8 +764,10 @@ function calculateServerScore(answers, questions) {
 
   for (const ans of answers) {
     if (typeof ans.questionId !== 'string') return null;
+    if (typeof ans.selectedIndex !== 'number' || !Number.isInteger(ans.selectedIndex)) return null;
     if (typeof ans.timeRemaining !== 'number' || !Number.isFinite(ans.timeRemaining)) return null;
     if (typeof ans.isCorrect !== 'boolean') return null;
+    if (ans.selectedIndex < 0 || ans.selectedIndex > 3) return null;
     if (!questionIdSet.has(ans.questionId)) return null;
 
     const t = Math.max(0, Math.min(QUESTION_TIME, ans.timeRemaining));
@@ -789,14 +797,19 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
   if (typeof body.userId !== 'string' || body.userId.length > 100) {
     return jsonResponse({ error: 'Invalid userId' }, 400, corsHeaders);
   }
-  const trimmedUsername = typeof body.username === 'string' ? body.username.trim() : '';
-  if (trimmedUsername.length < 1 || trimmedUsername.length > 50) {
-    return jsonResponse({ error: 'Invalid username (1-50 characters)' }, 400, corsHeaders);
+  const normalizedUsername = typeof body.username === 'string'
+    ? body.username.trim().replace(/\s+/g, ' ')
+    : '';
+  if (normalizedUsername.length < 1 || normalizedUsername.length > USERNAME_MAX_LENGTH) {
+    return jsonResponse({ error: `Invalid username (1-${USERNAME_MAX_LENGTH} characters)` }, 400, corsHeaders);
   }
-  if (!/^[a-zA-Z0-9\s\-_.]+$/.test(trimmedUsername)) {
+  if (!/^[a-zA-Z0-9\s\-_.]+$/.test(normalizedUsername)) {
     return jsonResponse({ error: 'Username contains invalid characters' }, 400, corsHeaders);
   }
-  body.username = trimmedUsername;
+  if (isBlockedUsername(normalizedUsername)) {
+    return jsonResponse({ error: 'Please choose a different username' }, 400, corsHeaders);
+  }
+  body.username = normalizedUsername;
   if (typeof body.completionTime !== 'number' || !Number.isFinite(body.completionTime) || body.completionTime < 0 || body.completionTime > 300) {
     return jsonResponse({ error: 'Invalid completionTime (0-300)' }, 400, corsHeaders);
   }
@@ -840,27 +853,10 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
   const finalScore = serverScored.score;
   const finalCompletionTime = Math.floor(serverScored.completionTime);
 
-  // First submission wins — reject duplicates
-  const existing = await env.DB.prepare(
-    'SELECT score FROM scores WHERE round_id = ? AND user_id = ?'
-  ).bind(roundId, body.userId).first();
-
-  if (existing) {
-    const existingRank = await env.DB.prepare(`
-      SELECT COUNT(*) + 1 as rank FROM scores
-      WHERE round_id = ? AND (score > ? OR (score = ? AND completion_time < ?))
-    `).bind(roundId, existing.score, existing.score, finalCompletionTime).first();
-    return jsonResponse({
-      success: true,
-      rank: existingRank.rank,
-      score: existing.score,
-      duplicate: true,
-    }, 200, corsHeaders);
-  }
-
-  // Insert score (no upsert — first submission only)
-  await env.DB.prepare(`
-    INSERT INTO scores (round_id, user_id, username, score, completion_time)
+  // First submission wins — INSERT OR IGNORE avoids the race condition
+  // where two concurrent requests both pass the duplicate check.
+  const insertResult = await env.DB.prepare(`
+    INSERT OR IGNORE INTO scores (round_id, user_id, username, score, completion_time)
     VALUES (?, ?, ?, ?, ?)
   `).bind(
     roundId,
@@ -869,6 +865,23 @@ async function handleSubmitScore(request, roundId, env, corsHeaders) {
     finalScore,
     finalCompletionTime
   ).run();
+
+  if (!insertResult.meta.changes) {
+    // Row already existed — return the existing score
+    const existing = await env.DB.prepare(
+      'SELECT score, completion_time FROM scores WHERE round_id = ? AND user_id = ?'
+    ).bind(roundId, body.userId).first();
+    const existingRank = await env.DB.prepare(`
+      SELECT COUNT(*) + 1 as rank FROM scores
+      WHERE round_id = ? AND (score > ? OR (score = ? AND completion_time < ?))
+    `).bind(roundId, existing.score, existing.score, existing.completion_time).first();
+    return jsonResponse({
+      success: true,
+      rank: existingRank.rank,
+      score: existing.score,
+      duplicate: true,
+    }, 200, corsHeaders);
+  }
 
   // Update username on all past scores for this user (in case they changed it)
   await env.DB.prepare(`

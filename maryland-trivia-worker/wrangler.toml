@@ -38,3 +38,7 @@ name = "maryland-trivia-contest-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
+
+[[env.staging.kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "REPLACE_WITH_STAGING_KV_ID"

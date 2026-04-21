@@ -10,20 +10,20 @@
 import SwiftUI
 
 enum ColorTheme {
-    // MARK: - Primary Brand Colors (Maryland Red)
-    static let primary   = Color(red: 0.80, green: 0.08, blue: 0.20)  // Maryland Red #CC1433
-    static let secondary = Color(red: 0.78, green: 0.66, blue: 0.29)  // Maryland Gold #C8A84B
-    static let accent    = Color(red: 0.80, green: 0.08, blue: 0.20)  // Maryland Red
+    // MARK: - Primary Brand Colors (Maryland Red + Gold skin)
+    static let primary   = Color(red: 0.78, green: 0.14, blue: 0.19)  // Warm Maryland red
+    static let secondary = Color(red: 0.84, green: 0.67, blue: 0.25)  // Maryland gold
+    static let accent    = Color(red: 0.94, green: 0.76, blue: 0.22)  // Primary UI accent (gold)
 
     // MARK: - Neon Accent (gold glow)
-    static let neon = Color(red: 1.0, green: 0.84, blue: 0.0)         // Bright Gold #FFD700
+    static let neon = Color(red: 1.0, green: 0.88, blue: 0.32)        // Soft bright gold
 
-    // MARK: - Background Colors (dark mode — deep near-black with warm red undertone)
-    static let darkBg       = Color(red: 0.051, green: 0.012, blue: 0.020) // #0D0305
-    static let cardBg       = Color(red: 0.122, green: 0.039, blue: 0.051) // #1F0A0D
-    static let cardBgHover  = Color(red: 0.176, green: 0.059, blue: 0.078) // #2D0F14
-    static let appSurface   = Color(red: 0.082, green: 0.020, blue: 0.031) // #150408
-    static let cardBorder   = Color(red: 0.239, green: 0.082, blue: 0.110) // #3D151C
+    // MARK: - Background Colors (creme backdrop + dark panels)
+    static let darkBg       = Color(red: 0.96, green: 0.92, blue: 0.85)    // Light creme
+    static let cardBg       = Color(red: 0.10, green: 0.06, blue: 0.07)    // Deep warm charcoal
+    static let cardBgHover  = Color(red: 0.15, green: 0.10, blue: 0.11)    // Raised panel tone
+    static let appSurface   = Color(red: 0.11, green: 0.07, blue: 0.08)    // Status/nav surface
+    static let cardBorder   = Color(red: 0.39, green: 0.33, blue: 0.29)    // Warm border
 
     // MARK: - Light mode equivalents
     static let lightBg      = Color(red: 0.980, green: 0.961, blue: 0.953) // #FAF5F3
@@ -36,9 +36,9 @@ enum ColorTheme {
     static let cardBackground   = Color(.systemBackground)
 
     // MARK: - Text Colors
-    static let textPrimary   = Color(red: 0.969, green: 0.929, blue: 0.898) // #F7EDE5 (dark mode)
-    static let textSecondary = Color(red: 0.769, green: 0.627, blue: 0.659) // #C4A0A8
-    static let textMuted     = Color(red: 0.478, green: 0.337, blue: 0.373) // #7A565F
+    static let textPrimary   = Color(red: 0.97, green: 0.94, blue: 0.90)
+    static let textSecondary = Color(red: 0.80, green: 0.73, blue: 0.67)
+    static let textMuted     = Color(red: 0.63, green: 0.55, blue: 0.49)
 
     // MARK: - Semantic Colors
     static let success = Color(red: 0.29,  green: 0.87,  blue: 0.50)   // #4ADE80
@@ -60,7 +60,7 @@ enum ColorTheme {
     static let timerRed    = Color(red: 0.937, green: 0.267, blue: 0.267)
 
     // MARK: - Answer Button Colors
-    static let answerDefault          = Color(red: 0.80,  green: 0.08,  blue: 0.20)   // Maryland Red
+    static let answerDefault          = Color(red: 0.94,  green: 0.76,  blue: 0.22)   // Maryland Gold
     static let answerCorrect          = Color(red: 0.29,  green: 0.87,  blue: 0.50)
     static let answerIncorrect        = Color(red: 0.937, green: 0.267, blue: 0.267)
     static let answerSand             = Color(red: 0.992, green: 0.961, blue: 0.941)  // warm cream
@@ -69,8 +69,8 @@ enum ColorTheme {
     static let answerSandDarkSelected = Color(red: 0.361, green: 0.157, blue: 0.196)
 
     // MARK: - Progress Bar (Red → Gold)
-    static let progressStart = Color(red: 0.80, green: 0.08, blue: 0.20) // Maryland Red
-    static let progressEnd   = Color(red: 1.0,  green: 0.84, blue: 0.0)  // Gold
+    static let progressStart = Color(red: 0.78, green: 0.14, blue: 0.19) // Maryland Red
+    static let progressEnd   = Color(red: 1.0,  green: 0.88, blue: 0.32) // Gold
 }
 
 // MARK: - Legacy Support

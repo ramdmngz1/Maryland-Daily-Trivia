@@ -33,10 +33,6 @@ final class AppAttestManager {
 
     /// Main entry point — ensures a valid access token is available.
     func ensureAuthenticated() async throws {
-        #if DEBUG
-        print("[AppAttest] ensureAuthenticated called")
-        #endif
-
         // Migrate sensitive Keychain items to ThisDeviceOnly accessibility (once per launch)
         if !hasMigratedKeychain {
             KeychainHelper.migrateToThisDeviceOnly(keys: [accessTokenKey, refreshTokenKey, tokenExpiryKey, attestKeyIdKey, "contest_user_id"])
@@ -46,31 +42,20 @@ final class AppAttestManager {
         // Already have a valid (non-expired) access token?
         if let expiry = tokenExpiry(), expiry > Date().addingTimeInterval(60),
            KeychainHelper.read(key: accessTokenKey) != nil {
-            #if DEBUG
-            print("[AppAttest] Valid token exists, expires:", expiry)
-            #endif
             return
         }
 
         // Try refreshing
         if KeychainHelper.read(key: refreshTokenKey) != nil {
             do {
-                #if DEBUG
-                print("[AppAttest] Attempting token refresh...")
-                #endif
                 try await refreshAccessToken()
                 return
             } catch {
-                #if DEBUG
-                print("[AppAttest] Refresh failed, re-attesting:", error.localizedDescription)
-                #endif
+                // Refresh failed — fall through to full attestation
             }
         }
 
         // Full attestation
-        #if DEBUG
-        print("[AppAttest] Starting full attestation...")
-        #endif
         try await performAttestation()
     }
 
@@ -110,23 +95,20 @@ final class AppAttestManager {
             throw AttestError.unsupported
         }
 
-        // 1. Generate (or reuse) an attest key
-        let keyId: String
-        if let existing = KeychainHelper.read(key: attestKeyIdKey) {
-            keyId = existing
-        } else {
-            keyId = try await service.generateKey()
-            KeychainHelper.save(key: attestKeyIdKey, value: keyId)
-        }
-
         let deviceId = KeychainHelper.getOrCreateUserId()
+
+        // Apple only allows attestKey() to be called once per key — a key cannot be
+        // re-attested. Any cached key from a previous failed or successful attestation
+        // must be discarded so we generate a fresh one. (We don't use assertKey() in
+        // this app, so there is no reason to hold on to a key across sessions.)
+        KeychainHelper.delete(key: attestKeyIdKey)
+        let keyId = try await service.generateKey()
 
         // 2. Get challenge from server
         let challenge = try await fetchChallenge(deviceId: deviceId)
 
         // 3. Hash the challenge and attest with Apple
-        let challengeData = Data(challenge.utf8)
-        let hash = Data(SHA256.hash(data: challengeData))
+        let hash = Data(SHA256.hash(data: Data(challenge.utf8)))
         let attestation = try await service.attestKey(keyId, clientDataHash: hash)
 
         // 4. Send attestation to our server
@@ -142,9 +124,14 @@ final class AppAttestManager {
     #if DEBUG
     private func performDebugAttestation() async throws {
         let deviceId = KeychainHelper.getOrCreateUserId()
-        print("[AppAttest] Debug attestation for device:", deviceId)
 
-        let debugSecret = "texas-trivia-debug-2026"
+        // DEBUG_SECRET must be set as an environment variable in the Xcode scheme.
+        // Edit Scheme → Run → Environment Variables → add DEBUG_SECRET with the value
+        // from your staging backend's ENABLE_DEBUG_AUTH secret. Never hardcode this value.
+        guard let debugSecret = ProcessInfo.processInfo.environment["DEBUG_SECRET"],
+              !debugSecret.isEmpty else {
+            throw AttestError.unsupported
+        }
 
         var request = URLRequest(url: URL(string: "\(baseURL)/auth/attest")!)
         request.httpMethod = "POST"
@@ -157,21 +144,12 @@ final class AppAttestManager {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await SecureSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            print("[AppAttest] Debug attestation: no HTTP response")
-            throw AttestError.serverRejected
-        }
-        print("[AppAttest] Debug attestation response:", http.statusCode)
-        guard http.statusCode == 200 else {
-            if let errorBody = String(data: data, encoding: .utf8) {
-                print("[AppAttest] Server error body:", errorBody)
-            }
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw AttestError.serverRejected
         }
 
         let tokens = try Self.decoder.decode(TokenResponse.self, from: data)
         storeTokens(tokens)
-        print("[AppAttest] Debug attestation succeeded, token expires in \(tokens.expiresIn)s")
     }
     #endif
 

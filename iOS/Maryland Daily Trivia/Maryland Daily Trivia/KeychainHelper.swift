@@ -24,7 +24,12 @@ enum KeychainHelper {
         var addQuery = query
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        #if DEBUG
+        if status != errSecSuccess {
+            print("Keychain save failed for key '\(key)': \(status)")
+        }
+        #endif
     }
 
     /// Read a string value from the Keychain
