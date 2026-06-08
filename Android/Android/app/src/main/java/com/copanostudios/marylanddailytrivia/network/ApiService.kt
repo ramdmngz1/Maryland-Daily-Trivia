@@ -8,7 +8,6 @@ import com.copanostudios.marylanddailytrivia.data.LiveTriviaState
 import com.copanostudios.marylanddailytrivia.data.QuestionsApiResponse
 import com.copanostudios.marylanddailytrivia.data.ScoreSubmission
 import com.copanostudios.marylanddailytrivia.data.ScoreSubmissionResponse
-import com.copanostudios.marylanddailytrivia.data.UserHistoryResponse
 import com.copanostudios.marylanddailytrivia.data.UserStats
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -40,9 +39,6 @@ interface ApiService {
 
     @GET("api/user/{userId}/stats")
     suspend fun getUserStats(@Path("userId") userId: String): UserStats
-
-    @GET("api/user/{userId}/history")
-    suspend fun getUserHistory(@Path("userId") userId: String): UserHistoryResponse
 
     /** Auth header required. */
     @POST("api/questions")

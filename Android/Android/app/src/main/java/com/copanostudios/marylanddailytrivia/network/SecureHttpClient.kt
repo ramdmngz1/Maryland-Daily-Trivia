@@ -16,14 +16,12 @@ import java.util.concurrent.TimeUnit
  */
 object SecureHttpClient {
 
-    private val allowedHosts = setOf("maryland-trivia-contest.f22682jcz6.workers.dev")
-
     /** Interceptor that enforces HTTPS + host allowlist */
     private val hostAllowlistInterceptor = Interceptor { chain ->
         val request = chain.request()
         val url = request.url
         if (url.scheme != "https") throw java.io.IOException("Only HTTPS requests are allowed")
-        if (url.host !in allowedHosts) throw java.io.IOException("Host not in allowlist: ${url.host}")
+        if (url.host !in NetworkConfig.allowedHosts) throw java.io.IOException("Host not in allowlist: ${url.host}")
         chain.proceed(request)
     }
 

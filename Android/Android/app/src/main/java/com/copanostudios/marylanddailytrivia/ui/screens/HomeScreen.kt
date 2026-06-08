@@ -167,7 +167,7 @@ fun HomeScreen(
                     width = 240.dp,
                     modifier = Modifier.offset(y = (-6).dp)
                 )
-                NeonText(text = "TEXAS DAILY", size = 36.sp)
+                NeonText(text = "MARYLAND DAILY", size = 36.sp)
                 Text(
                     text = "TRIVIA",
                     style = TextStyle(

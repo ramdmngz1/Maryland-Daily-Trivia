@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,6 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -36,14 +39,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.copanostudios.marylanddailytrivia.data.DailyLeaderboardEntry
 import com.copanostudios.marylanddailytrivia.data.LeaderboardEntry
+import com.copanostudios.marylanddailytrivia.ui.components.AppEmptyState
+import com.copanostudios.marylanddailytrivia.ui.components.AppErrorState
+import com.copanostudios.marylanddailytrivia.ui.components.AppLoadingState
+import com.copanostudios.marylanddailytrivia.ui.components.AppStateAction
 import com.copanostudios.marylanddailytrivia.ui.components.AppBackground
 import com.copanostudios.marylanddailytrivia.ui.components.NeonText
 import com.copanostudios.marylanddailytrivia.ui.components.WoodTextureOverlay
 import com.copanostudios.marylanddailytrivia.ui.theme.Amber
 import com.copanostudios.marylanddailytrivia.ui.theme.CardBorder
 import com.copanostudios.marylanddailytrivia.ui.theme.CardBg
-import com.copanostudios.marylanddailytrivia.ui.theme.Error
-import com.copanostudios.marylanddailytrivia.ui.theme.Warning
 import com.copanostudios.marylanddailytrivia.ui.theme.TextMuted
 import com.copanostudios.marylanddailytrivia.ui.theme.TextPrimary
 import com.copanostudios.marylanddailytrivia.viewmodel.LeaderboardViewModel
@@ -73,62 +78,21 @@ fun LeaderboardScreen(
         AppBackground()
         when {
             isLoading && leaderboard == null && dailyLeaderboard == null ->
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Amber)
-                }
+                AppLoadingState(
+                    title = "Loading rankings",
+                    message = "Fetching the latest Maryland trivia scores."
+                )
             error != null ->
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(32.dp)
-                    ) {
-                        Text("⚠", style = TextStyle(fontSize = 44.sp, color = Error.copy(alpha = 0.7f)))
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Failed to load leaderboard",
-                            style = TextStyle(
-                                fontSize = 17.sp,
-                                fontFamily = FontFamily.Serif,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
-                            )
-                        )
-                        if (retryCooldownSeconds > 0) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Retrying automatically in ${retryCooldownSeconds}s",
-                                style = TextStyle(
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Warning
-                                )
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        androidx.compose.material3.Button(
-                            onClick = { leaderboardViewModel.retryLoad() },
-                            enabled = retryCooldownSeconds == 0,
-                            modifier = Modifier
-                                .padding(horizontal = 60.dp)
-                                .fillMaxWidth()
-                                .then(if (retryCooldownSeconds > 0) Modifier.then(Modifier) else Modifier),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Amber,
-                                disabledContainerColor = Amber.copy(alpha = 0.4f)
-                            ),
-                            shape = RoundedCornerShape(50)
-                        ) {
-                            Text(
-                                "Retry",
-                                style = TextStyle(
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (retryCooldownSeconds > 0) TextPrimary.copy(alpha = 0.5f) else TextPrimary
-                                )
-                            )
-                        }
-                    }
-                }
+                AppErrorState(
+                    title = "Failed to load leaderboard",
+                    message = error?.localizedMessage ?: "Check your connection and try again.",
+                    retryCooldownSeconds = retryCooldownSeconds,
+                    action = AppStateAction(
+                        label = "Retry",
+                        enabled = retryCooldownSeconds == 0,
+                        onClick = { leaderboardViewModel.retryLoad() }
+                    )
+                )
             isDaily && dailyLeaderboard != null -> {
                 val data = dailyLeaderboard!!
                 val currentUserEntry = data.entries.firstOrNull { it.userId == currentUserId }
@@ -140,33 +104,34 @@ fun LeaderboardScreen(
                             .padding(vertical = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        NeonText("LEADERBOARD", size = 20.sp)
+                        NeonText("LEADERBOARD", size = 20.sp, modifier = Modifier.semantics { heading() })
                         Text(
                             "Today's Total • ${data.total} Players",
                             style = TextStyle(fontSize = 12.sp, color = TextMuted)
                         )
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(4.dp).height(16.dp).width(16.dp),
-                                color = Amber,
-                                strokeWidth = 2.dp
-                            )
-                        }
                     }
                     // User rank pill
                     currentUserEntry?.let { entry ->
                         DailyRankPill(entry = entry, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                     }
-                    if (data.entries.size >= 3) DailyPodiumView(data.entries, currentUserId)
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(CardBg)
-                    ) {
-                        items(data.entries) { entry ->
-                            DailyLeaderboardRow(entry, entry.userId == currentUserId)
+                    if (data.entries.isEmpty()) {
+                        AppEmptyState(
+                            title = "No rankings yet",
+                            message = "Scores will appear here after players finish a round.",
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        if (data.entries.size >= 3) DailyPodiumView(data.entries, currentUserId)
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(CardBg)
+                        ) {
+                            items(data.entries, key = { it.userId }) { entry ->
+                                DailyLeaderboardRow(entry, entry.userId == currentUserId)
+                            }
                         }
                     }
                 }
@@ -182,7 +147,7 @@ fun LeaderboardScreen(
                             .padding(vertical = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        NeonText("LEADERBOARD", size = 20.sp)
+                        NeonText("LEADERBOARD", size = 20.sp, modifier = Modifier.semantics { heading() })
                         Text(
                             "Today's Round • ${data.total} Players",
                             style = TextStyle(fontSize = 12.sp, color = TextMuted)
@@ -192,16 +157,24 @@ fun LeaderboardScreen(
                     currentUserEntry?.let { entry ->
                         RoundRankPill(entry = entry, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                     }
-                    if (data.entries.size >= 3) PodiumView(data.entries, currentUserId)
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(CardBg)
-                    ) {
-                        items(data.entries) { entry ->
-                            BarLeaderboardRow(entry, entry.userId == currentUserId)
+                    if (data.entries.isEmpty()) {
+                        AppEmptyState(
+                            title = "No scores posted",
+                            message = "This round is waiting for its first completed score.",
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        if (data.entries.size >= 3) PodiumView(data.entries, currentUserId)
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(CardBg)
+                        ) {
+                            items(data.entries, key = { it.userId }) { entry ->
+                                BarLeaderboardRow(entry, entry.userId == currentUserId)
+                            }
                         }
                     }
                 }
@@ -219,7 +192,10 @@ private fun RoundRankPill(entry: LeaderboardEntry, modifier: Modifier = Modifier
             .fillMaxWidth()
             .background(CardBg.copy(alpha = 0.95f), RoundedCornerShape(50))
             .border(1.dp, Amber.copy(alpha = 0.35f), RoundedCornerShape(50))
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp)
+            .clearAndSetSemantics {
+                contentDescription = "Your rank number ${entry.rank}, ${entry.score} points"
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -251,7 +227,10 @@ private fun DailyRankPill(entry: DailyLeaderboardEntry, modifier: Modifier = Mod
             .fillMaxWidth()
             .background(CardBg.copy(alpha = 0.95f), RoundedCornerShape(50))
             .border(1.dp, Amber.copy(alpha = 0.35f), RoundedCornerShape(50))
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp)
+            .clearAndSetSemantics {
+                contentDescription = "Your rank number ${entry.rank}, ${entry.totalScore} points"
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -347,11 +326,14 @@ private fun PodiumColumn(
     extra: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val rankLabel = when (medal) { "🥇" -> "1"; "🥈" -> "2"; "🥉" -> "3"; else -> "" }
+    val desc = "$username, rank $rankLabel, $score points${extra?.let { ", $it" } ?: ""}"
     Box(
         modifier = modifier
             .height(height.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(CardBg),
+            .background(CardBg)
+            .clearAndSetSemantics { contentDescription = desc },
         contentAlignment = Alignment.Center
     ) {
         WoodTextureOverlay()
@@ -389,7 +371,8 @@ private fun PodiumColumn(
 
 @Composable
 fun BarLeaderboardRow(entry: LeaderboardEntry, isCurrentUser: Boolean) {
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val rowDesc = "${entry.username}${if (isCurrentUser) ", you" else ""}, rank ${entry.rank}, ${entry.score} points"
+    Box(modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = rowDesc }) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -463,7 +446,8 @@ fun BarLeaderboardRow(entry: LeaderboardEntry, isCurrentUser: Boolean) {
 
 @Composable
 fun DailyLeaderboardRow(entry: DailyLeaderboardEntry, isCurrentUser: Boolean) {
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val rowDesc = "${entry.username}${if (isCurrentUser) ", you" else ""}, rank ${entry.rank}, ${entry.totalScore} points, ${entry.roundsPlayed} round${if (entry.roundsPlayed == 1) "" else "s"}"
+    Box(modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = rowDesc }) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

@@ -45,6 +45,10 @@ import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import com.copanostudios.marylanddailytrivia.ui.theme.Amber
 import com.copanostudios.marylanddailytrivia.ui.theme.CardBorder
 import com.copanostudios.marylanddailytrivia.ui.theme.CardBg
@@ -226,7 +230,7 @@ fun TwinklingStar(delay: Int = 0, modifier: Modifier = Modifier) {
     )
     Text(
         text = "✦",
-        modifier = modifier,
+        modifier = modifier.clearAndSetSemantics { },
         style = TextStyle(
             fontSize = 8.sp,
             color = Amber.copy(alpha = opacity)
@@ -249,6 +253,12 @@ fun LiveTimerBar(
             .height(height)
             .clip(RoundedCornerShape(6.dp))
             .background(Color.White.copy(alpha = 0.06f))
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = clampedFraction,
+                    range = 0f..1f
+                )
+            }
     ) {
         Box(
             modifier = Modifier

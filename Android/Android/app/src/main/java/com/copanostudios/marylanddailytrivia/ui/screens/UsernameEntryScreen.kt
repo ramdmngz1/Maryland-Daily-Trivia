@@ -69,7 +69,7 @@ fun UsernameEntryScreen(
     }
 
     val titleText = when (mode) {
-        UsernameEntryMode.ONBOARDING -> "Welcome, partner!"
+        UsernameEntryMode.ONBOARDING -> "Welcome!"
         UsernameEntryMode.EDITING -> "Edit Your Name"
     }
     val subtitleText = when (mode) {
@@ -115,7 +115,7 @@ fun UsernameEntryScreen(
             Spacer(Modifier.weight(0.5f))
 
             ArmadilloLogo(width = 112.dp)
-            NeonText("TEXAS DAILY", size = 24.sp)
+            NeonText("MARYLAND DAILY", size = 24.sp)
             Text(
                 "TRIVIA",
                 style = TextStyle(

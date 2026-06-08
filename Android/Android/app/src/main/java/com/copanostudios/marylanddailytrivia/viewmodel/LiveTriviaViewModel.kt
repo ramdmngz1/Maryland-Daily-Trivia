@@ -3,8 +3,12 @@ package com.copanostudios.marylanddailytrivia.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.copanostudios.marylanddailytrivia.AppContainer
+import com.copanostudios.marylanddailytrivia.BuildConfig
+import com.copanostudios.marylanddailytrivia.core.AnswerElimination
 import com.copanostudios.marylanddailytrivia.core.AnswerPositionBalancer
+import com.copanostudios.marylanddailytrivia.core.EliminationState
 import com.copanostudios.marylanddailytrivia.core.Scoring
+import com.copanostudios.marylanddailytrivia.data.AnswerSubmission
 import com.copanostudios.marylanddailytrivia.data.LiveTriviaState
 import com.copanostudios.marylanddailytrivia.data.Phase
 import com.copanostudios.marylanddailytrivia.data.ScoreSubmission
@@ -57,6 +61,7 @@ class LiveTriviaViewModel : ViewModel() {
 
     private var pollingJob: Job? = null
     private var tickJob: Job? = null
+    private val localTickIntervalMs = 100L
     private var currentSyncIntervalMs: Long = 1_000L
     private var cachedBalancedRoundId: String? = null
 
@@ -66,9 +71,7 @@ class LiveTriviaViewModel : ViewModel() {
         else -> 3_000L
     }
 
-    private var eliminationQuestionIndex = -1
-    private var hasEliminatedFirst = false
-    private var hasEliminatedSecond = false
+    private var eliminationState = EliminationState()
 
     private var scoreSubmitted = false
 
@@ -99,7 +102,7 @@ class LiveTriviaViewModel : ViewModel() {
 
         tickJob = viewModelScope.launch {
             while (isActive) {
-                delay(50)
+                delay(localTickIntervalMs)
                 updateLocalState()
             }
         }
@@ -115,11 +118,14 @@ class LiveTriviaViewModel : ViewModel() {
     fun recordAnswer(selectedIndex: Int, timeRemaining: Double) {
         val state = _liveState.value ?: return
         if (!isLocallyInQuiz || _localPhase.value != Phase.QUESTION) return
-        val question = getCurrentQuestion() ?: return
+        val (phase, qIndex, exactRemaining) = state.localState()
+        if (phase != Phase.QUESTION) return
+
+        val question = _currentQuestions.value.getOrNull(qIndex) ?: return
         if (_eliminatedIndices.value.contains(selectedIndex)) return
 
         val session = _userSession.value ?: UserAnswerSession(state.roundId)
-        val qIndex = _localQuestionIndex.value
+        val answerTimeRemaining = exactRemaining.coerceIn(0.0, LiveTriviaState.QUESTION_TIME)
 
         // Ignore re-selecting same answer
         if (session.getAnswer(qIndex)?.selectedIndex == selectedIndex) return
@@ -127,7 +133,7 @@ class LiveTriviaViewModel : ViewModel() {
         val isCorrect = selectedIndex == question.correctIndex
         val pts = Scoring.points(
             timeLimit = LiveTriviaState.QUESTION_TIME,
-            secondsRemaining = timeRemaining,
+            secondsRemaining = answerTimeRemaining,
             isCorrect = isCorrect
         )
 
@@ -137,7 +143,7 @@ class LiveTriviaViewModel : ViewModel() {
             selectedIndex = selectedIndex,
             isCorrect = isCorrect,
             pointsEarned = pts,
-            timeRemaining = timeRemaining
+            timeRemaining = answerTimeRemaining
         )
     }
 
@@ -175,14 +181,18 @@ class LiveTriviaViewModel : ViewModel() {
     }
 
     private suspend fun loadQuestions(state: LiveTriviaState) {
-        if (cachedBalancedRoundId == state.roundId && _currentQuestions.value.isNotEmpty()) return
+        if (cachedBalancedRoundId == state.roundId &&
+            _currentQuestions.value.size >= state.questionIds.size
+        ) return
         try {
             val questions = repository.getQuestions(state.questionIds)
             _currentQuestions.value = AnswerPositionBalancer.balancedShuffled(
                 questions,
                 seed = state.roundSeedULong
             )
-            cachedBalancedRoundId = state.roundId
+            if (questions.size >= state.questionIds.size) {
+                cachedBalancedRoundId = state.roundId
+            }
         } catch (e: Exception) {
             _error.value = e
         }
@@ -191,7 +201,8 @@ class LiveTriviaViewModel : ViewModel() {
     private fun handleRoundChange(newState: LiveTriviaState) {
         _userSession.value = UserAnswerSession(newState.roundId)
         scoreSubmitted = false
-        resetEliminations()
+        eliminationState = EliminationState()
+        _eliminatedIndices.value = emptySet()
     }
 
     private fun updateLocalState() {
@@ -201,9 +212,15 @@ class LiveTriviaViewModel : ViewModel() {
         val prevPhase = _localPhase.value
         val prevIndex = _localQuestionIndex.value
 
-        _localPhase.value = phase
-        _localQuestionIndex.value = qIndex
-        _localSecondsRemaining.value = remaining
+        if (_localPhase.value != phase) {
+            _localPhase.value = phase
+        }
+        if (_localQuestionIndex.value != qIndex) {
+            _localQuestionIndex.value = qIndex
+        }
+        if (kotlin.math.abs(_localSecondsRemaining.value - remaining) >= localTickIntervalMs / 1000.0 || remaining <= 0.0) {
+            _localSecondsRemaining.value = remaining
+        }
 
         // Submit score when transitioning into RESULTS phase (once per round)
         if (prevPhase != Phase.RESULTS && phase == Phase.RESULTS && !scoreSubmitted) {
@@ -211,13 +228,23 @@ class LiveTriviaViewModel : ViewModel() {
             viewModelScope.launch { submitScore() }
         }
 
-        // Reset eliminations on question change
-        if (phase == Phase.QUESTION && qIndex != prevIndex) {
-            resetEliminations()
-        }
-
         if (phase == Phase.QUESTION) {
-            updateEliminationsLocally(qIndex, remaining)
+            val question = getCurrentQuestion()
+            if (question != null) {
+                val currentSelection = _userSession.value?.getAnswer(qIndex)?.selectedIndex
+                val result = AnswerElimination.update(
+                    eliminationState, qIndex, remaining,
+                    question.correctIndex, question.choices.size, currentSelection,
+                )
+                eliminationState = result.state
+                _eliminatedIndices.value = result.state.eliminated
+                if (result.shouldClearSelection) {
+                    _userSession.value = _userSession.value?.clearAnswer(qIndex)
+                }
+            }
+        } else if (phase != Phase.QUESTION && prevPhase == Phase.QUESTION) {
+            eliminationState = EliminationState()
+            _eliminatedIndices.value = emptySet()
         }
     }
 
@@ -229,59 +256,36 @@ class LiveTriviaViewModel : ViewModel() {
         val userId = storage.getOrCreateUserId()
         val username = storage.getOrCreateUsername().ifEmpty { "Anonymous" }
         val completionTime = session.questionsAnswered * LiveTriviaState.QUESTION_CYCLE
-
-        try {
-            repository.submitScore(
-                state.roundId,
-                ScoreSubmission(
-                    userId = userId,
-                    username = username,
-                    score = session.totalScore,
-                    completionTime = completionTime
+        val answers = session.answers
+            .toSortedMap()
+            .values
+            .map { answer ->
+                AnswerSubmission(
+                    questionId = answer.questionId,
+                    selectedIndex = answer.selectedIndex,
+                    timeRemaining = answer.timeRemaining,
+                    isCorrect = answer.isCorrect
                 )
-            )
-        } catch (_: Exception) {
-            // Score submission failure is non-critical
-        }
-    }
+            }
 
-    private fun updateEliminationsLocally(questionIndex: Int, remaining: Double) {
-        if (questionIndex != eliminationQuestionIndex) {
-            resetEliminations()
-            eliminationQuestionIndex = questionIndex
+        val submission = ScoreSubmission(
+            userId = userId,
+            username = username,
+            score = session.totalScore,
+            completionTime = completionTime,
+            answers = answers
+        )
+        for (attempt in 0 until 3) {
+            try {
+                repository.submitScore(state.roundId, submission)
+                return
+            } catch (e: Exception) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.w("LiveTrivia", "Score submission attempt ${attempt + 1} failed", e)
+                }
+                if (attempt < 2) delay(((attempt + 1) * 1000).toLong())
+            }
         }
-        if (remaining <= 8.0 && !hasEliminatedFirst) {
-            hasEliminatedFirst = true
-            eliminateOneWrongAnswer(questionIndex)
-        }
-        if (remaining <= 4.0 && !hasEliminatedSecond) {
-            hasEliminatedSecond = true
-            eliminateOneWrongAnswer(questionIndex)
-        }
-    }
-
-    private fun eliminateOneWrongAnswer(questionIndex: Int) {
-        val question = getCurrentQuestion() ?: return
-        val currentSelection = _userSession.value?.getAnswer(questionIndex)?.selectedIndex
-        val eliminated = _eliminatedIndices.value
-
-        val candidates = (0 until question.choices.size).filter { idx ->
-            idx != question.correctIndex && !eliminated.contains(idx)
-        }
-        val victim = candidates.randomOrNull() ?: return
-        _eliminatedIndices.value = eliminated + victim
-
-        // Clear the player's answer if it was eliminated
-        if (currentSelection == victim) {
-            _userSession.value = _userSession.value?.clearAnswer(questionIndex)
-        }
-    }
-
-    private fun resetEliminations() {
-        _eliminatedIndices.value = emptySet()
-        hasEliminatedFirst = false
-        hasEliminatedSecond = false
-        eliminationQuestionIndex = -1
     }
 
     override fun onCleared() {

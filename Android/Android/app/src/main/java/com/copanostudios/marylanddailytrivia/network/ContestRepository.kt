@@ -9,7 +9,6 @@ import com.copanostudios.marylanddailytrivia.data.QuestionsApiResponse
 import com.copanostudios.marylanddailytrivia.data.ScoreSubmission
 import com.copanostudios.marylanddailytrivia.data.ScoreSubmissionResponse
 import com.copanostudios.marylanddailytrivia.data.TriviaQuestion
-import com.copanostudios.marylanddailytrivia.data.UserHistoryResponse
 import com.copanostudios.marylanddailytrivia.data.UserStats
 import com.copanostudios.marylanddailytrivia.data.IdsRequest
 import com.copanostudios.marylanddailytrivia.data.RateLimitedException
@@ -36,7 +35,7 @@ class ContestRepository(
 
         fun create(authManager: AuthManager): ContestRepository {
             val retrofit = Retrofit.Builder()
-                .baseUrl("https://maryland-trivia-contest.f22682jcz6.workers.dev/")
+                .baseUrl(NetworkConfig.BASE_URL)
                 .client(SecureHttpClient.okHttpClient)
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
@@ -76,9 +75,6 @@ class ContestRepository(
 
     suspend fun getUserStats(userId: String): UserStats =
         apiService.getUserStats(userId)
-
-    suspend fun getUserHistory(userId: String): UserHistoryResponse =
-        apiService.getUserHistory(userId)
 
     // MARK: — Authenticated endpoints with 401 retry
 

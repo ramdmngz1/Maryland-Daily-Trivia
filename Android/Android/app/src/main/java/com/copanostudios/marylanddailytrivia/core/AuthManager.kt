@@ -3,8 +3,7 @@ package com.copanostudios.marylanddailytrivia.core
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import com.copanostudios.marylanddailytrivia.data.RefreshTokenResponse
-import com.copanostudios.marylanddailytrivia.data.TokenResponse
+import com.copanostudios.marylanddailytrivia.network.NetworkConfig
 import com.copanostudios.marylanddailytrivia.storage.SecureStorageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -38,8 +37,7 @@ class AuthManager(
     private val storage: SecureStorageManager,
     private val okHttpClient: OkHttpClient
 ) {
-    private val baseUrl = "https://maryland-trivia-contest.f22682jcz6.workers.dev"
-    private val keyAlias = "texas_trivia_attest_key"
+    private val keyAlias = "maryland_trivia_attest_key"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val jsonMediaType = "application/json".toMediaType()
@@ -122,7 +120,7 @@ class AuthManager(
         }.toString()
 
         val request = Request.Builder()
-            .url("$baseUrl/auth/attest")
+            .url("${NetworkConfig.BASE_URL}auth/attest")
             .post(bodyStr.toRequestBody(jsonMediaType))
             .build()
 
@@ -144,7 +142,7 @@ class AuthManager(
     }
 
     private suspend fun fetchChallenge(deviceId: String): String {
-        val challengeUrl = "$baseUrl/auth/challenge".toHttpUrl()
+        val challengeUrl = "${NetworkConfig.BASE_URL}auth/challenge".toHttpUrl()
             .newBuilder()
             .addQueryParameter("deviceId", deviceId)
             .build()
@@ -221,7 +219,7 @@ class AuthManager(
     private suspend fun refreshAccessToken(refreshToken: String) {
         val bodyStr = buildJsonObject { put("refreshToken", refreshToken) }.toString()
         val request = Request.Builder()
-            .url("$baseUrl/auth/refresh")
+            .url("${NetworkConfig.BASE_URL}auth/refresh")
             .post(bodyStr.toRequestBody(jsonMediaType))
             .build()
 
@@ -238,6 +236,7 @@ class AuthManager(
 
         val result = json.decodeFromString<RefreshTokenResponse>(responseBody)
         storage.save(accessTokenKey, result.accessToken)
+        result.refreshToken?.let { storage.save(refreshTokenKey, it) }
         storage.save(tokenExpiryKey, (System.currentTimeMillis() + result.expiresIn * 1000L).toString())
     }
 

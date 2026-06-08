@@ -26,11 +26,20 @@ data class ContestRound(
 // MARK: — Score Submission
 
 @Serializable
+data class AnswerSubmission(
+    val questionId: String,
+    val selectedIndex: Int,
+    val timeRemaining: Double,
+    val isCorrect: Boolean
+)
+
+@Serializable
 data class ScoreSubmission(
     val userId: String,
     val username: String,
     val score: Int,
-    val completionTime: Double
+    val completionTime: Double,
+    val answers: List<AnswerSubmission> = emptyList()
 )
 
 @Serializable
@@ -93,30 +102,6 @@ data class UserStats(
     val winStreak: Int? = null
 )
 
-// MARK: — User History
-
-@Serializable
-data class UserHistoryResponse(
-    val userId: String,
-    val rounds: List<UserRoundHistory>
-)
-
-@Serializable
-data class UserRoundHistory(
-    val roundId: String,
-    val score: Int,
-    val completionTime: Int,
-    val rank: Int,
-    val totalPlayers: Int,
-    /** Milliseconds timestamp from server */
-    val startTime: Double,
-    /** Milliseconds timestamp from server */
-    val submittedAt: Double
-) {
-    val startTimeMs: Long get() = startTime.toLong()
-    val submittedAtMs: Long get() = submittedAt.toLong()
-}
-
 // MARK: — Questions API
 
 @Serializable
@@ -129,19 +114,4 @@ data class QuestionsApiResponse(val questions: List<TriviaQuestion>)
 
 class RateLimitedException(val retryAfterSeconds: Int) :
     Exception("Too many requests. Retry in ${retryAfterSeconds}s.")
-
-// MARK: — Auth Models (used by AuthManager)
-
-@Serializable
-data class TokenResponse(
-    val accessToken: String,
-    val refreshToken: String,
-    val expiresIn: Int
-)
-
-@Serializable
-data class RefreshTokenResponse(
-    val accessToken: String,
-    val expiresIn: Int
-)
 

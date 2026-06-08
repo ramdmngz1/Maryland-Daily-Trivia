@@ -203,7 +203,7 @@ fun SettingsScreen(onDismiss: () -> Unit) {
                         onClick = {
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
-                                    Uri.parse("https://www.copanostudios.com/privacy-texas-daily-trivia"))
+                                    Uri.parse("https://www.copanostudios.com/privacy-maryland-daily-trivia"))
                             )
                         }
                     )
@@ -214,7 +214,7 @@ fun SettingsScreen(onDismiss: () -> Unit) {
                         onClick = {
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
-                                    Uri.parse("https://www.copanostudios.com/support-texas-daily-trivia"))
+                                    Uri.parse("https://www.copanostudios.com/support-maryland-daily-trivia"))
                             )
                         }
                     )
